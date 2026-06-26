@@ -25,7 +25,7 @@ export default function Dashboard() {
 
   const fetchCandidates = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/candidates');
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates`);
       setCandidates(res.data);
     } catch (err) {
       console.error(err);
@@ -36,7 +36,7 @@ export default function Dashboard() {
 
   const toggleBlock = async (id, currentStatus) => {
     try {
-      await axios.put(`http://localhost:5000/api/candidates/${id}/block`, {
+      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/block`, {
         isBlocked: !currentStatus
       });
       fetchCandidates();
@@ -48,7 +48,7 @@ export default function Dashboard() {
   const handleCreateCandidate = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/candidates', {
+      await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates`, {
         name, email, username, password
       });
       setShowModal(false);

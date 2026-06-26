@@ -23,7 +23,7 @@ export default function Review() {
     
     if (!candidate) {
       // If no candidate state, fetch candidates and find this one
-      axios.get('http://localhost:5000/api/candidates').then(res => {
+      axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates`).then(res => {
         const found = res.data.find(c => c.id === id);
         setCandidate(found);
         setEarnings(found?.earnings || 0);
@@ -32,7 +32,7 @@ export default function Review() {
       });
     }
 
-    axios.get(`http://localhost:5000/api/candidates/${id}/forms`)
+    axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/forms`)
       .then(res => setForms(res.data))
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
@@ -40,7 +40,7 @@ export default function Review() {
 
   const handleEvaluate = async (formId) => {
     try {
-      const res = await axios.post(`http://localhost:5000/api/forms/${formId}/evaluate`);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/forms/${formId}/evaluate`);
       setForms(forms.map(f => f.id === formId ? { ...f, score: res.data.score, mistakes: res.data.mistakes, status: res.data.status } : f));
     } catch (err) {
       alert('Evaluation failed');
@@ -49,7 +49,7 @@ export default function Review() {
 
   const handleSend = async (formId) => {
     try {
-      await axios.put(`http://localhost:5000/api/forms/${formId}/send`);
+      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/forms/${formId}/send`);
       setForms(forms.map(f => f.id === formId ? { ...f, status: 'sent' } : f));
       alert('Score sent to candidate successfully!');
     } catch (err) {
@@ -78,7 +78,7 @@ export default function Review() {
   const handleSaveEarnings = async () => {
     setSaving(true);
     try {
-      await axios.put(`http://localhost:5000/api/candidates/${id}/earnings`, { earnings: parseFloat(earnings) });
+      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/earnings`, { earnings: parseFloat(earnings) });
       alert('Earnings saved successfully!');
     } catch (err) {
       alert('Failed to save earnings');
@@ -90,7 +90,7 @@ export default function Review() {
   const handleSaveTargets = async () => {
     setSaving(true);
     try {
-      await axios.put(`http://localhost:5000/api/candidates/${id}/targets`, { 
+      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/targets`, { 
         dailyTarget: parseInt(dailyTarget, 10),
         monthlyTarget: parseInt(monthlyTarget, 10)
       });
