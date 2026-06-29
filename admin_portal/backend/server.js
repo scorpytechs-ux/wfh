@@ -8,7 +8,22 @@ const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 
 // Initialize Firebase Admin
-const serviceAccount = require('./serviceAccountKey.json');
+let serviceAccount;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (err) {
+    console.error('Error parsing FIREBASE_SERVICE_ACCOUNT env variable:', err.message);
+    process.exit(1);
+  }
+} else {
+  try {
+    serviceAccount = require('./serviceAccountKey.json');
+  } catch (err) {
+    console.error('Service account key not found. Please set FIREBASE_SERVICE_ACCOUNT env var or provide serviceAccountKey.json locally.');
+    process.exit(1);
+  }
+}
 
 initializeApp({
   credential: cert(serviceAccount)
