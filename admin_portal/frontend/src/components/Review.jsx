@@ -14,6 +14,7 @@ export default function Review() {
   const [monthlyTarget, setMonthlyTarget] = useState(candidate?.monthlyTarget || 0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [adminScores, setAdminScores] = useState({});
 
   useEffect(() => {
     if (!localStorage.getItem('adminToken')) {
@@ -44,6 +45,22 @@ export default function Review() {
       setForms(forms.map(f => f.id === formId ? { ...f, score: res.data.score, mistakes: res.data.mistakes, status: res.data.status } : f));
     } catch (err) {
       alert('Evaluation failed');
+    }
+  };
+
+  const handleAdminScore = async (formId) => {
+    const targetScore = adminScores[formId];
+    if (targetScore === undefined || targetScore === '') {
+      alert('Please enter a target score.');
+      return;
+    }
+    
+    try {
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/forms/${formId}/admin-score`, { targetScore: parseFloat(targetScore) });
+      setForms(forms.map(f => f.id === formId ? { ...f, ...res.data.updatedFields, score: res.data.score, mistakes: res.data.mistakes, status: res.data.status } : f));
+      alert('Admin score applied and mistakes injected!');
+    } catch (err) {
+      alert('Admin override failed');
     }
   };
 
@@ -269,14 +286,28 @@ export default function Review() {
                         )}
                       </div>
                       
-                      <div style={{ display: 'flex', gap: '12px' }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                         {(!form.status || form.status === 'pending') && (
                           <button className="btn btn-outline" onClick={() => handleEvaluate(form.id)}>
                             Run Auto-Evaluator
                           </button>
                         )}
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '8px' }}>
+                          <input 
+                            type="number" 
+                            placeholder="Score %" 
+                            style={{ width: '80px', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} 
+                            value={adminScores[form.id] || ''}
+                            onChange={(e) => setAdminScores({...adminScores, [form.id]: e.target.value})}
+                          />
+                          <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '14px', background: '#eab308', color: 'black' }} onClick={() => handleAdminScore(form.id)}>
+                            Set Admin Score
+                          </button>
+                        </div>
+
                         {form.status === 'evaluated' && (
-                          <button className="btn btn-primary" onClick={() => handleSend(form.id)}>
+                          <button className="btn btn-success" onClick={() => handleSend(form.id)}>
                             Send to Candidate
                           </button>
                         )}

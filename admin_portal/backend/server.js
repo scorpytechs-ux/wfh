@@ -315,6 +315,126 @@ app.post('/api/forms/:id/evaluate', async (req, res) => {
     }
 });
 
+// Admin Decide Score - Inject Mistakes
+app.post('/api/forms/:id/admin-score', async (req, res) => {
+    const { id } = req.params;
+    const { targetScore } = req.body;
+    
+    try {
+        const doc = await db.collection('forms').doc(id).get();
+        if (!doc.exists) return res.status(404).json({ error: 'Form not found' });
+        
+        let form = doc.data();
+        
+        const groundTruth = {
+            "serialNo": "1",
+            "title": "Miss.",
+            "firstName": "Ashlynn",
+            "lastName": "Lipscomb",
+            "initial": "Parish",
+            "email": "ashlynnlipscomb@gmail.com",
+            "fatherName": "Zole",
+            "dob": "2006-08-27",
+            "gender": "Female",
+            "profession": "Shop Manager",
+            "mailingStreet": "777 Elmwood Dr",
+            "mailingCity": "Atlanta",
+            "mailingPostal": "30302",
+            "mailingCountry": "USA",
+            "serviceProvider": "Shaw Communications",
+            "fileNo": "76180379",
+            "referenceNo": "@j_>B...[S|<?6]",
+            "simNo": "49019504522720900000",
+            "imsi1": "828120726858670",
+            "imsi2": "2410317799J...",
+            "typeOfPlan": "Healthcare Plans",
+            "creditCardType": "Dunkin1",
+            "contractValue": "USD150",
+            "dateOfIssue": "2004-12-08",
+            "dateOfRenewal": "2007-12-08",
+            "installment": "4.596",
+            "amountInWords": "Four Point Five Ninety Six",
+            "remarks": "Not Applicable"
+        };
+        
+        const totalFields = Object.keys(groundTruth).length;
+        const targetCorrectFields = Math.max(0, Math.min(totalFields, Math.round((targetScore / 100) * totalFields)));
+        const targetMistakesCount = totalFields - targetCorrectFields;
+        
+        // Find current correct and incorrect fields
+        let currentMistakes = [];
+        let currentCorrect = [];
+        
+        for (const key in groundTruth) {
+            if (form[key] !== groundTruth[key]) {
+                currentMistakes.push(key);
+            } else {
+                currentCorrect.push(key);
+            }
+        }
+        
+        // Helper to introduce a mistake
+        const introduceMistake = (val) => {
+            if (val == null || val === '') return 'N/A';
+            let strVal = String(val);
+            if (!isNaN(strVal)) {
+                return String(parseFloat(strVal) + (Math.random() > 0.5 ? 1 : -1));
+            }
+            if (strVal.length > 2) {
+                const idx = Math.floor(Math.random() * (strVal.length - 1));
+                const arr = strVal.split('');
+                const temp = arr[idx];
+                arr[idx] = arr[idx+1];
+                arr[idx+1] = temp;
+                return arr.join('');
+            }
+            return strVal + 'x';
+        };
+        
+        let updates = {};
+        
+        if (currentMistakes.length < targetMistakesCount) {
+            // Need to add more mistakes
+            const mistakesToAdd = targetMistakesCount - currentMistakes.length;
+            // Shuffle correct fields
+            const shuffled = currentCorrect.sort(() => 0.5 - Math.random());
+            const fieldsToMutate = shuffled.slice(0, mistakesToAdd);
+            
+            for (const field of fieldsToMutate) {
+                updates[field] = introduceMistake(form[field] || groundTruth[field]);
+                currentMistakes.push(field);
+            }
+        } else if (currentMistakes.length > targetMistakesCount) {
+            // Need to fix some mistakes
+            const mistakesToFix = currentMistakes.length - targetMistakesCount;
+            const shuffled = currentMistakes.sort(() => 0.5 - Math.random());
+            const fieldsToFix = shuffled.slice(0, mistakesToFix);
+            
+            for (const field of fieldsToFix) {
+                updates[field] = groundTruth[field];
+                currentMistakes = currentMistakes.filter(m => m !== field);
+            }
+        }
+        
+        // Apply updates to form
+        Object.assign(form, updates);
+        
+        const score = ((totalFields - currentMistakes.length) / totalFields) * 100;
+        const status = 'evaluated';
+        
+        await db.collection('forms').doc(id).update({
+            ...updates,
+            score,
+            mistakes: currentMistakes,
+            status
+        });
+        
+        res.json({ success: true, score, mistakes: currentMistakes, status, updatedFields: updates });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Send form to candidate
 app.put('/api/forms/:id/send', async (req, res) => {
     const { id } = req.params;
