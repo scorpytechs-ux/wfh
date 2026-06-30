@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!localStorage.getItem('adminToken')) {
@@ -47,15 +48,19 @@ export default function Dashboard() {
 
   const handleCreateCandidate = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates`, {
         name, email, username, password
       });
       setShowModal(false);
       setName(''); setEmail(''); setUsername(''); setPassword('');
+      alert('Candidate created successfully');
       fetchCandidates();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to create candidate.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -162,8 +167,10 @@ export default function Dashboard() {
               </div>
               
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Create Account</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowModal(false)} disabled={isSubmitting}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Creating...' : 'Create Account'}
+                </button>
               </div>
             </form>
           </div>

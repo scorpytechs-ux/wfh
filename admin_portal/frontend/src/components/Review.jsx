@@ -15,6 +15,8 @@ export default function Review() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [adminScores, setAdminScores] = useState({});
+  const [bulkScore, setBulkScore] = useState('');
+  const [bulking, setBulking] = useState(false);
 
   useEffect(() => {
     if (!localStorage.getItem('adminToken')) {
@@ -22,22 +24,24 @@ export default function Review() {
       return;
     }
     
-    if (!candidate) {
-      // If no candidate state, fetch candidates and find this one
-      axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates`).then(res => {
-        const found = res.data.find(c => c.id === id);
+    // Always fetch latest to ensure data is fresh
+    axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates`).then(res => {
+      const found = res.data.find(c => c.id === id);
+      if (found) {
         setCandidate(found);
-        setEarnings(found?.earnings || 0);
-        setDailyTarget(found?.dailyTarget || 0);
-        setMonthlyTarget(found?.monthlyTarget || 0);
-      });
-    }
+        // Only update targets/earnings if they are initially 0 (to not overwrite if admin is typing)
+        // or actually, it's safe to overwrite on mount
+        setEarnings(found.earnings || 0);
+        setDailyTarget(found.dailyTarget || 0);
+        setMonthlyTarget(found.monthlyTarget || 0);
+      }
+    });
 
     axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/forms`)
       .then(res => setForms(res.data))
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
-  }, [id, candidate, navigate]);
+  }, [id, navigate]);
 
   const handleEvaluate = async (formId) => {
     try {
@@ -71,6 +75,23 @@ export default function Review() {
       alert('Score sent to candidate successfully!');
     } catch (err) {
       alert('Failed to send score');
+    }
+  };
+
+  const handleBulkScore = async () => {
+    if (bulkScore === '' || bulkScore === undefined) {
+      alert('Please enter a target score.');
+      return;
+    }
+    setBulking(true);
+    try {
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/bulk-score`, { targetScore: parseFloat(bulkScore) });
+      setForms(res.data.forms);
+      alert('Bulk score applied and mistakes injected for all pending forms!');
+    } catch (err) {
+      alert('Bulk override failed');
+    } finally {
+      setBulking(false);
     }
   };
 
@@ -225,9 +246,25 @@ export default function Review() {
 
         {/* Right Content: Forms List */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <FileText size={28} color="var(--primary)" />
-            <h2 style={{ fontSize: '28px', fontWeight: 'bold' }}>Submitted Forms ({forms.filter(f => f.status !== 'archived').length})</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <FileText size={28} color="var(--primary)" />
+              <h2 style={{ fontSize: '28px', fontWeight: 'bold' }}>Submitted Forms ({forms.filter(f => f.status !== 'archived').length})</h2>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '8px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-muted)' }}>Bulk Action:</span>
+              <input 
+                type="number" 
+                placeholder="Score %" 
+                style={{ width: '80px', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} 
+                value={bulkScore}
+                onChange={(e) => setBulkScore(e.target.value)}
+              />
+              <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '14px', background: '#eab308', color: 'black' }} onClick={handleBulkScore} disabled={bulking}>
+                {bulking ? 'Applying...' : 'Set Score for All'}
+              </button>
+            </div>
           </div>
 
           {forms.filter(f => f.status !== 'archived').length === 0 ? (

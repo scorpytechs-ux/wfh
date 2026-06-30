@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:installment_management_system/data/repositories/form_repository.dart';
 import 'package:installment_management_system/presentation/files/state/form_data_model.dart';
 import 'score_summary_screen.dart';
@@ -19,7 +20,8 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  int _submittedFormsCount = 0;
+  int _submittedFormsCountAllTime = 0;
+  int _submittedFormsCountToday = 0;
 
   @override
   void initState() {
@@ -30,11 +32,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Future<void> _fetchSubmittedFormsCount() async {
     final user = ref.read(authViewModelProvider).currentUser;
     if (user != null) {
-      final repo = FormRepository();
-      final forms = await repo.getFormsForUser(user['id']);
+      final result = await FirebaseFirestore.instance.collection('forms')
+          .where('userId', isEqualTo: user['id'])
+          .get();
+          
+      final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+      
+      int allTime = 0;
+      int todayCount = 0;
+      
+      for (var doc in result.docs) {
+        final data = doc.data();
+        if (data['status'] == 'archived') continue;
+        allTime++;
+        if (data['submittedDate'] == todayStr) {
+          todayCount++;
+        }
+      }
+      
       if (mounted) {
         setState(() {
-          _submittedFormsCount = forms.length;
+          _submittedFormsCountAllTime = allTime;
+          _submittedFormsCountToday = todayCount;
         });
       }
     }
@@ -124,8 +143,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void _handleSubmitProject() async {
     final user = ref.read(authViewModelProvider).currentUser;
     final forms = ref.read(projectStateProvider);
-    const int hardcodedFallback = 18;
-    final int targetCount = (user != null && user['dailyTarget'] != null && user['dailyTarget'] > 0) ? user['dailyTarget'] : hardcodedFallback;
+    final int targetCount = (user != null && user['dailyTarget'] != null) ? user['dailyTarget'] : 0;
     
     bool isComplete = true;
     if (forms.length < targetCount) {
@@ -161,7 +179,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
       if (mounted) {
         setState(() {
-          _submittedFormsCount += forms.length;
+          _submittedFormsCountAllTime += forms.length;
+          _submittedFormsCountToday += forms.length;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -181,8 +200,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final int dailyTarget = user != null && user['dailyTarget'] != null ? user['dailyTarget'] : 0;
     final int monthlyTarget = user != null && user['monthlyTarget'] != null ? user['monthlyTarget'] : 0;
     
-    // Total progress is only submitted forms
-    final currentForms = _submittedFormsCount;
+    // Total progress includes forms saved in memory + submitted
+    final int currentDailyForms = _submittedFormsCountToday + forms.length;
+    final int currentMonthlyForms = _submittedFormsCountAllTime + forms.length;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -226,9 +246,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildTargetCard('Daily Target Progress', currentForms, dailyTarget, Colors.orange),
+                _buildTargetCard('Daily Target Progress', currentDailyForms, dailyTarget, Colors.orange),
                 const SizedBox(width: 32),
-                _buildTargetCard('Monthly Target Progress', currentForms, monthlyTarget, Colors.blue),
+                _buildTargetCard('Monthly Target Progress', currentMonthlyForms, monthlyTarget, Colors.blue),
               ],
             ),
           ),

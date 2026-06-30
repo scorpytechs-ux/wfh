@@ -193,6 +193,14 @@ class AuthViewModel extends Notifier<AuthState> {
     }
   }
 
+  Future<void> resendOtp() async {
+    final email = state.pendingEmail;
+    if (email != null) {
+      final otp = await _emailService.sendOtpEmail(email);
+      state = state.copyWith(pendingOtp: otp);
+    }
+  }
+
   Future<void> logout() async {
     _userSubscription?.cancel();
     _userSubscription = null;

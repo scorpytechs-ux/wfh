@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:excel/excel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import '../state/form_data_model.dart';
 import '../state/project_state_provider.dart';
 import '../../auth/viewmodels/auth_viewmodel.dart';
 import '../../../data/repositories/form_repository.dart';
+import '../../auth/screens/blocked_screen.dart';
 
 class UploadFileTab extends ConsumerStatefulWidget {
   const UploadFileTab({super.key});
@@ -339,25 +341,38 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
 
   void _handleUpload() async {
     final user = ref.read(authViewModelProvider).currentUser;
-    final int dailyTarget = (user != null && user['dailyTarget'] != null && user['dailyTarget'] > 0)
+    final int dailyTarget = (user != null && user['dailyTarget'] != null)
         ? user['dailyTarget']
-        : 18;
-    final int monthlyTarget = (user != null && user['monthlyTarget'] != null && user['monthlyTarget'] > 0)
+        : 0;
+    final int monthlyTarget = (user != null && user['monthlyTarget'] != null)
         ? user['monthlyTarget']
-        : 18;
+        : 0;
 
     final existingForms = ref.read(projectStateProvider);
 
-    int submittedCount = 0;
+    int submittedCountAllTime = 0;
+    int submittedCountToday = 0;
     if (user != null) {
-      final repo = FormRepository();
-      final fetched = await repo.getFormsForUser(user['id']);
-      submittedCount = fetched.length;
+      final result = await FirebaseFirestore.instance.collection('forms')
+          .where('userId', isEqualTo: user['id'])
+          .get();
+          
+      final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+      
+      for (var doc in result.docs) {
+        final data = doc.data();
+        if (data['status'] == 'archived') continue;
+        submittedCountAllTime++;
+        if (data['submittedDate'] == todayStr) {
+          submittedCountToday++;
+        }
+      }
     }
     
-    final totalActiveForms = existingForms.length + submittedCount;
+    final totalActiveForms = existingForms.length + submittedCountAllTime;
+    final totalDailyForms = existingForms.length + submittedCountToday;
 
-    if (totalActiveForms >= monthlyTarget) {
+    if (monthlyTarget <= 0 || totalActiveForms >= monthlyTarget) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -368,9 +383,24 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
       }
       return;
     }
+    
+    if (dailyTarget <= 0 || totalDailyForms >= dailyTarget) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You have reached your daily target limit! You cannot upload more forms today.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
 
     int remainingMonthly = monthlyTarget - totalActiveForms;
-    final int count = dailyTarget < remainingMonthly ? dailyTarget : remainingMonthly;
+    int remainingDaily = dailyTarget - totalDailyForms;
+    
+    final int maxAllowed = remainingDaily < remainingMonthly ? remainingDaily : remainingMonthly;
+    final int count = maxAllowed > 0 ? maxAllowed : 1;
 
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -433,7 +463,7 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
 
   String _r(String key) => _currentRecord[key] ?? '';
 
-  void _handleSubmit() {
+  void _handleSave() {
     final serialNo = _controllers['Serial No']!.text.trim();
 
     // Check for duplicates
@@ -506,8 +536,66 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
         }
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('All $_totalForms forms submitted! You can now upload a new file.')),
+        SnackBar(content: Text('All $_totalForms forms saved! You can now upload a new file.')),
       );
+    }
+  }
+
+  void _handleFinalSubmit() async {
+    final user = ref.read(authViewModelProvider).currentUser;
+    final forms = ref.read(projectStateProvider);
+    final int dailyTarget = (user != null && user['dailyTarget'] != null)
+        ? user['dailyTarget']
+        : 0;
+
+    bool isComplete = true;
+    if (forms.length < dailyTarget) {
+      isComplete = false;
+    } else {
+      for (final form in forms) {
+        if (!form.isComplete) {
+          isComplete = false;
+          break;
+        }
+      }
+    }
+
+    if (!isComplete) {
+      // Instantly block the user ID in the database
+      await ref.read(authViewModelProvider.notifier).blockCurrentUser();
+      ref.read(authViewModelProvider.notifier).logout(); // Log them out
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => BlockedScreen(targetCount: dailyTarget)),
+          (route) => false,
+        );
+      }
+    } else {
+      final formRepo = FormRepository();
+      for (var form in forms) {
+        if (user != null) {
+          await formRepo.saveForm(form, user['id']);
+        }
+      }
+
+      ref.read(projectStateProvider.notifier).clearForms();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Project submitted successfully! Waiting for admin review.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        setState(() {
+          _isFileUploaded = false;
+          _currentFormIndex = 1;
+          _fileRecords = [];
+          for (var controller in _controllers.values) {
+            controller.clear();
+          }
+        });
+      }
     }
   }
 
@@ -625,13 +713,27 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
                         _buildInputRow('Date Of Renewal', 'Installment'),
                         _buildInputRow('Amount In Words', 'Remarks'),
                         const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: _handleSubmit,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.textPrimaryColor,
-                            padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-                          ),
-                          child: const Text('SUBMIT'),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton(
+                              onPressed: _handleSave,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF3B82F6),
+                                padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                              ),
+                              child: const Text('SAVE'),
+                            ),
+                            const SizedBox(width: 24),
+                            ElevatedButton(
+                              onPressed: _handleFinalSubmit,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.textPrimaryColor,
+                                padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                              ),
+                              child: const Text('SUBMIT'),
+                            ),
+                          ],
                         ),
                       ],
                     ),

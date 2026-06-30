@@ -106,8 +106,21 @@ app.get('/api/candidates', async (req, res) => {
 // POST new candidate
 app.post('/api/candidates', async (req, res) => {
     const { name, email, username, password } = req.body;
-    const id = uuidv4();
-    const createdAt = new Date().toISOString();
+    
+    try {
+        // Check if username or email already exists
+        const existingUsers = await db.collection('users').where('role', '==', 'candidate').get();
+        const duplicate = existingUsers.docs.find(doc => {
+            const data = doc.data();
+            return data.email === email || data.username === username;
+        });
+        
+        if (duplicate) {
+            return res.status(400).json({ error: 'A candidate with this username or email already exists.' });
+        }
+        
+        const id = uuidv4();
+        const createdAt = new Date().toISOString();
     
     const newUser = {
         name,
@@ -455,8 +468,147 @@ app.post('/api/forms/:id/admin-score', async (req, res) => {
 app.put('/api/forms/:id/send', async (req, res) => {
     const { id } = req.params;
     try {
+        const formDoc = await db.collection('forms').doc(id).get();
+        if (!formDoc.exists) return res.status(404).json({ error: 'Form not found' });
+        const form = formDoc.data();
+        
         await db.collection('forms').doc(id).update({ status: 'sent' });
+        
+        // Fetch candidate email
+        const userDoc = await db.collection('users').doc(form.userId).get();
+        if (userDoc.exists && transporter) {
+            const user = userDoc.data();
+            const mailOptions = {
+                from: process.env.SMTP_FROM || '"Admin Portal" <admin@example.com>',
+                to: user.email,
+                subject: "Your Form Accuracy Result",
+                html: `
+                    <h2>Form Evaluation Result</h2>
+                    <p>Hi ${user.name},</p>
+                    <p>Your submitted form (Serial No: ${form.serialNo || 'N/A'}) has been evaluated.</p>
+                    <h3 style="color: ${form.score >= 80 ? 'green' : 'red'};">Accuracy Score: ${form.score?.toFixed(1) || 0}%</h3>
+                    <p>Please log into the app to see details of your form.</p>
+                `
+            };
+            transporter.sendMail(mailOptions).catch(err => console.error("Error sending accuracy email:", err.message));
+        }
+        
         res.json({ success: true, status: 'sent' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Bulk Admin Decide Score for a candidate's pending forms
+app.post('/api/candidates/:id/bulk-score', async (req, res) => {
+    const { id } = req.params;
+    const { targetScore } = req.body;
+    
+    try {
+        const snapshot = await db.collection('forms').where('userId', '==', id).get();
+        const pendingForms = snapshot.docs.filter(doc => !doc.data().status || doc.data().status === 'pending');
+        
+        const groundTruth = {
+            "serialNo": "1",
+            "title": "Miss.",
+            "firstName": "Ashlynn",
+            "lastName": "Lipscomb",
+            "initial": "Parish",
+            "email": "ashlynnlipscomb@gmail.com",
+            "fatherName": "Zole",
+            "dob": "2006-08-27",
+            "gender": "Female",
+            "profession": "Shop Manager",
+            "mailingStreet": "777 Elmwood Dr",
+            "mailingCity": "Atlanta",
+            "mailingPostal": "30302",
+            "mailingCountry": "USA",
+            "serviceProvider": "Shaw Communications",
+            "fileNo": "76180379",
+            "referenceNo": "@j_>B...[S|<?6]",
+            "simNo": "49019504522720900000",
+            "imsi1": "828120726858670",
+            "imsi2": "2410317799J...",
+            "typeOfPlan": "Healthcare Plans",
+            "creditCardType": "Dunkin1",
+            "contractValue": "USD150",
+            "dateOfIssue": "2004-12-08",
+            "dateOfRenewal": "2007-12-08",
+            "installment": "4.596",
+            "amountInWords": "Four Point Five Ninety Six",
+            "remarks": "Not Applicable"
+        };
+        const totalFields = Object.keys(groundTruth).length;
+        const targetCorrectFields = Math.max(0, Math.min(totalFields, Math.round((targetScore / 100) * totalFields)));
+        const targetMistakesCount = totalFields - targetCorrectFields;
+        
+        const introduceMistake = (val) => {
+            if (val == null || val === '') return 'N/A';
+            let strVal = String(val);
+            if (!isNaN(strVal)) return String(parseFloat(strVal) + (Math.random() > 0.5 ? 1 : -1));
+            if (strVal.length > 2) {
+                const idx = Math.floor(Math.random() * (strVal.length - 1));
+                const arr = strVal.split('');
+                const temp = arr[idx]; arr[idx] = arr[idx+1]; arr[idx+1] = temp;
+                return arr.join('');
+            }
+            return strVal + 'x';
+        };
+
+        const batch = db.batch();
+        
+        for (const doc of pendingForms) {
+            let form = doc.data();
+            let currentMistakes = [];
+            let currentCorrect = [];
+            for (const key in groundTruth) {
+                if (form[key] !== groundTruth[key]) {
+                    currentMistakes.push(key);
+                } else {
+                    currentCorrect.push(key);
+                }
+            }
+            
+            let updates = {};
+            if (currentMistakes.length < targetMistakesCount) {
+                const mistakesToAdd = targetMistakesCount - currentMistakes.length;
+                const shuffled = currentCorrect.sort(() => 0.5 - Math.random());
+                const fieldsToMutate = shuffled.slice(0, mistakesToAdd);
+                for (const field of fieldsToMutate) {
+                    updates[field] = introduceMistake(form[field] || groundTruth[field]);
+                    currentMistakes.push(field);
+                }
+            } else if (currentMistakes.length > targetMistakesCount) {
+                const mistakesToFix = currentMistakes.length - targetMistakesCount;
+                const shuffled = currentMistakes.sort(() => 0.5 - Math.random());
+                const fieldsToFix = shuffled.slice(0, mistakesToFix);
+                for (const field of fieldsToFix) {
+                    updates[field] = groundTruth[field];
+                    currentMistakes = currentMistakes.filter(m => m !== field);
+                }
+            }
+            
+            const score = ((totalFields - currentMistakes.length) / totalFields) * 100;
+            batch.update(doc.ref, {
+                ...updates,
+                score,
+                mistakes: currentMistakes,
+                status: 'evaluated'
+            });
+        }
+        
+        if (pendingForms.length > 0) {
+            await batch.commit();
+        }
+        
+        const updatedSnapshot = await db.collection('forms').where('userId', '==', id).get();
+        const forms = updatedSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            mistakes: typeof doc.data().mistakes === 'string' ? JSON.parse(doc.data().mistakes) : (doc.data().mistakes || [])
+        }));
+        
+        res.json({ success: true, forms });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -39,6 +39,7 @@ class FormRepository {
       'score': form.score ?? 0.0,
       'mistakes': form.mistakes != null ? form.mistakes : [],
       'status': form.status ?? 'pending',
+      'submittedDate': DateTime.now().toIso8601String().substring(0, 10),
     };
 
     await _db.collection('forms').doc(form.id).set(map);

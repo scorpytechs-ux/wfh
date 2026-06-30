@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../../dashboard/screens/dashboard_screen.dart';
 import '../../../core/theme/app_theme.dart';
+import 'login_screen.dart';
 
 class OtpScreen extends ConsumerStatefulWidget {
   const OtpScreen({super.key});
@@ -13,6 +15,8 @@ class OtpScreen extends ConsumerStatefulWidget {
 
 class _OtpScreenState extends ConsumerState<OtpScreen> {
   final _otpController = TextEditingController();
+  int _resendCooldown = 0;
+  Timer? _timer;
 
   @override
   void initState() {
@@ -32,8 +36,29 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
   @override
   void dispose() {
+    _timer?.cancel();
     _otpController.dispose();
     super.dispose();
+  }
+
+  void _startResendTimer() {
+    setState(() {
+      _resendCooldown = 60;
+    });
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendCooldown > 0) {
+        setState(() {
+          _resendCooldown--;
+        });
+      } else {
+        timer.cancel();
+      }
+    });
   }
 
   void _handleVerify() {
@@ -59,6 +84,17 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     final authState = ref.watch(authViewModelProvider);
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          onPressed: () => Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          ),
+        ),
+      ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -140,6 +176,22 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                             ),
                           ),
                           child: const Text('Verify & Login', style: TextStyle(fontSize: 16)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: _resendCooldown > 0 ? null : () {
+                          ref.read(authViewModelProvider.notifier).resendOtp();
+                          _startResendTimer();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('OTP Resent!')),
+                          );
+                        },
+                        child: Text(
+                          _resendCooldown > 0 ? 'Resend OTP in ${_resendCooldown}s' : 'Resend OTP',
+                          style: TextStyle(
+                            color: _resendCooldown > 0 ? Colors.grey : AppTheme.primaryColor,
+                          ),
                         ),
                       ),
                     ],

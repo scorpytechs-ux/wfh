@@ -170,7 +170,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                           child: TextFormField(
                             controller: _nameController,
                             decoration: const InputDecoration(labelText: 'Customer Name'),
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
+                            validator: (v) => v!.isEmpty ? '!!! Required' : null,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -178,7 +178,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                           child: TextFormField(
                             controller: _contractNumController,
                             decoration: const InputDecoration(labelText: 'Contract Number'),
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
+                            validator: (v) => v!.isEmpty ? '!!! Required' : null,
                           ),
                         ),
                       ],
@@ -190,7 +190,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                           child: TextFormField(
                             controller: _mobileController,
                             decoration: const InputDecoration(labelText: 'Mobile Number'),
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
+                            validator: (v) => v!.isEmpty ? '!!! Required' : null,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -248,7 +248,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                             controller: _contractValController,
                             decoration: const InputDecoration(labelText: 'Contract Value', prefixText: '\$'),
                             keyboardType: TextInputType.number,
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
+                            validator: (v) => v!.isEmpty ? '!!! Required' : null,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -257,7 +257,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                             controller: _contractMonthsController,
                             decoration: const InputDecoration(labelText: 'Duration (Months)'),
                             keyboardType: TextInputType.number,
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
+                            validator: (v) => v!.isEmpty ? '!!! Required' : null,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -266,7 +266,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                             controller: _installmentAmtController,
                             decoration: const InputDecoration(labelText: 'Installment Amount', prefixText: '\$'),
                             keyboardType: TextInputType.number,
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
+                            validator: (v) => v!.isEmpty ? '!!! Required' : null,
                           ),
                         ),
                       ],
@@ -298,7 +298,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                         ElevatedButton.icon(
                           onPressed: _saveForm,
                           icon: const Icon(Icons.save),
-                          label: Text(widget.customerToEdit == null ? 'Save Customer' : 'Update Customer'),
+                          label: Text(widget.customerToEdit == null ? 'Save & Submit' : 'Update Customer'),
                         ),
                       ],
                     )
