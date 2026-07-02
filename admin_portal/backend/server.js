@@ -122,21 +122,20 @@ app.post('/api/candidates', async (req, res) => {
         const id = uuidv4();
         const createdAt = new Date().toISOString();
     
-    const newUser = {
-        name,
-        email,
-        username,
-        password,
-        createdAt,
-        role: 'candidate',
-        isBlocked: 0,
-        earnings: 0.0,
-        dailyTarget: 0,
-        monthlyTarget: 0,
-        lastOtp: ''
-    };
+        const newUser = {
+            name,
+            email,
+            username,
+            password,
+            createdAt,
+            role: 'candidate',
+            isBlocked: 0,
+            earnings: 0.0,
+            dailyTarget: 0,
+            monthlyTarget: 0,
+            lastOtp: ''
+        };
 
-    try {
         await db.collection('users').doc(id).set(newUser);
         
         // Send email
@@ -258,11 +257,44 @@ app.put('/api/candidates/:id/targets', async (req, res) => {
     }
 });
 
-// GET candidate forms
+// GET candidate forms count
+app.get('/api/candidates/:id/forms/count', async (req, res) => {
+    const { id } = req.params;
+    const { month } = req.query; // format: 'YYYY-MM'
+    
+    try {
+        let query = db.collection('forms').where('userId', '==', id);
+        
+        if (month) {
+            const startOfMonth = `${month}-01`;
+            const endOfMonth = `${month}-31`; // Simple string comparison works for YYYY-MM-DD
+            query = query.where('submittedDate', '>=', startOfMonth).where('submittedDate', '<=', endOfMonth);
+        }
+        
+        const snapshot = await query.count().get();
+        res.json({ count: snapshot.data().count });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET candidate forms (paginated)
 app.get('/api/candidates/:id/forms', async (req, res) => {
     const { id } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const status = req.query.status || 'active'; // 'active' or 'archived'
+    
     try {
-        const snapshot = await db.collection('forms').where('userId', '==', id).get();
+        let query = db.collection('forms').where('userId', '==', id);
+        
+        if (status === 'archived') {
+            query = query.where('status', '==', 'archived');
+        } else {
+            query = query.where('status', 'in', ['pending', 'evaluated', 'sent']);
+        }
+        
+        const snapshot = await query.limit(limit).offset((page - 1) * limit).get();
         const forms = [];
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -272,7 +304,7 @@ app.get('/api/candidates/:id/forms', async (req, res) => {
                 mistakes: typeof data.mistakes === 'string' ? JSON.parse(data.mistakes) : (data.mistakes || [])
             });
         });
-        res.json(forms);
+        res.json({ forms });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -306,6 +338,8 @@ app.post('/api/forms/:id/evaluate', async (req, res) => {
             "fileNo": "76180379",
             "referenceNo": "@j_>B...[S|<?6]",
             "simNo": "49019504522720900000",
+            "typeOfNetwork": "Shaw Communications",
+            "cellModelNo": "799228773",
             "imsi1": "828120726858670",
             "imsi2": "2410317799J...",
             "typeOfPlan": "Healthcare Plans",
@@ -356,7 +390,7 @@ app.post('/api/forms/:id/admin-score', async (req, res) => {
         let form = doc.data();
         
         const groundTruth = {
-            "serialNo": "1",
+            "serialNo": form.serialNo || "1",
             "title": "Miss.",
             "firstName": "Ashlynn",
             "lastName": "Lipscomb",
@@ -374,6 +408,8 @@ app.post('/api/forms/:id/admin-score', async (req, res) => {
             "fileNo": "76180379",
             "referenceNo": "@j_>B...[S|<?6]",
             "simNo": "49019504522720900000",
+            "typeOfNetwork": "Shaw Communications",
+            "cellModelNo": "799228773",
             "imsi1": "828120726858670",
             "imsi2": "2410317799J...",
             "typeOfPlan": "Healthcare Plans",
@@ -505,8 +541,8 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
     const { targetScore } = req.body;
     
     try {
-        const snapshot = await db.collection('forms').where('userId', '==', id).get();
-        const pendingForms = snapshot.docs.filter(doc => !doc.data().status || doc.data().status === 'pending');
+        const snapshot = await db.collection('forms').where('userId', '==', id).select('serialNo').get();
+        const allForms = snapshot.docs;
         
         const groundTruth = {
             "serialNo": "1",
@@ -527,6 +563,8 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             "fileNo": "76180379",
             "referenceNo": "@j_>B...[S|<?6]",
             "simNo": "49019504522720900000",
+            "typeOfNetwork": "Shaw Communications",
+            "cellModelNo": "799228773",
             "imsi1": "828120726858670",
             "imsi2": "2410317799J...",
             "typeOfPlan": "Healthcare Plans",
@@ -539,9 +577,40 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             "remarks": "Not Applicable"
         };
         const totalFields = Object.keys(groundTruth).length;
-        const targetCorrectFields = Math.max(0, Math.min(totalFields, Math.round((targetScore / 100) * totalFields)));
-        const targetMistakesCount = totalFields - targetCorrectFields;
+        const totalProjectFields = allForms.length * totalFields;
+        let totalMistakesToInject = Math.round(totalProjectFields * (1 - (targetScore / 100)));
+
+        // Select forms to be inaccurate (only where serialNo >= 30)
+        let availableForMistakes = [];
+        for (const doc of allForms) {
+            const serialNo = parseInt(doc.data().serialNo) || 0;
+            if (serialNo >= 30) {
+                availableForMistakes.push(doc);
+            }
+        }
+
+        // --- DEVELOPMENT/TESTING FALLBACK ---
+        if (availableForMistakes.length === 0 && allForms.length < 30) {
+            availableForMistakes = allForms;
+        }
+
+        // Assign mistakes to available forms
+        let formMistakeCounts = new Map();
+        availableForMistakes.forEach(doc => formMistakeCounts.set(doc.id, 0));
         
+        const availableIds = availableForMistakes.map(d => d.id);
+        while (totalMistakesToInject > 0 && availableIds.length > 0) {
+            const randomId = availableIds[Math.floor(Math.random() * availableIds.length)];
+            const currentCount = formMistakeCounts.get(randomId);
+            if (currentCount < totalFields) {
+                formMistakeCounts.set(randomId, currentCount + 1);
+                totalMistakesToInject--;
+            } else {
+                // Form is fully wrong, remove from available
+                availableIds.splice(availableIds.indexOf(randomId), 1);
+            }
+        }
+
         const introduceMistake = (val) => {
             if (val == null || val === '') return 'N/A';
             let strVal = String(val);
@@ -556,35 +625,30 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
         };
 
         const batch = db.batch();
-        
-        for (const doc of pendingForms) {
+
+        for (const doc of allForms) {
             let form = doc.data();
-            let currentMistakes = [];
-            let currentCorrect = [];
-            for (const key in groundTruth) {
-                if (form[key] !== groundTruth[key]) {
-                    currentMistakes.push(key);
-                } else {
-                    currentCorrect.push(key);
-                }
-            }
-            
             let updates = {};
-            if (currentMistakes.length < targetMistakesCount) {
-                const mistakesToAdd = targetMistakesCount - currentMistakes.length;
-                const shuffled = currentCorrect.sort(() => 0.5 - Math.random());
-                const fieldsToMutate = shuffled.slice(0, mistakesToAdd);
-                for (const field of fieldsToMutate) {
-                    updates[field] = introduceMistake(form[field] || groundTruth[field]);
-                    currentMistakes.push(field);
+            let currentMistakes = [];
+            
+            const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
+            const numMistakes = formMistakeCounts.get(doc.id) || 0;
+
+            if (numMistakes > 0) {
+                const allKeys = Object.keys(currentGroundTruth).filter(key => key !== 'serialNo').sort(() => 0.5 - Math.random());
+                const fieldsToMutate = allKeys.slice(0, numMistakes);
+                
+                for (const key of Object.keys(currentGroundTruth)) {
+                    if (fieldsToMutate.includes(key)) {
+                        updates[key] = introduceMistake(form[key] || currentGroundTruth[key]);
+                        currentMistakes.push(key);
+                    } else {
+                        updates[key] = currentGroundTruth[key];
+                    }
                 }
-            } else if (currentMistakes.length > targetMistakesCount) {
-                const mistakesToFix = currentMistakes.length - targetMistakesCount;
-                const shuffled = currentMistakes.sort(() => 0.5 - Math.random());
-                const fieldsToFix = shuffled.slice(0, mistakesToFix);
-                for (const field of fieldsToFix) {
-                    updates[field] = groundTruth[field];
-                    currentMistakes = currentMistakes.filter(m => m !== field);
+            } else {
+                for (const key in currentGroundTruth) {
+                    updates[key] = currentGroundTruth[key];
                 }
             }
             
@@ -597,18 +661,138 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             });
         }
         
+        if (allForms.length > 0) {
+            await batch.commit();
+        }
+        
+        // Update overallScore in user stats
+        await db.collection('users').doc(id).update({
+            'stats.overallScore': parseFloat(targetScore)
+        });
+        
+        res.json({ success: true, overallScore: targetScore });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// Bulk Auto Evaluate for a candidate's pending forms
+app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        const snapshot = await db.collection('forms').where('userId', '==', id).where('status', 'in', ['pending', '']).get();
+        const pendingForms = snapshot.docs;
+        
+        const groundTruth = {
+            "serialNo": "1",
+            "title": "Miss.",
+            "firstName": "Ashlynn",
+            "lastName": "Lipscomb",
+            "initial": "Parish",
+            "email": "ashlynnlipscomb@gmail.com",
+            "fatherName": "Zole",
+            "dob": "2006-08-27",
+            "gender": "Female",
+            "profession": "Shop Manager",
+            "mailingStreet": "777 Elmwood Dr",
+            "mailingCity": "Atlanta",
+            "mailingPostal": "30302",
+            "mailingCountry": "USA",
+            "serviceProvider": "Shaw Communications",
+            "fileNo": "76180379",
+            "referenceNo": "@j_>B...[S|<?6]",
+            "simNo": "49019504522720900000",
+            "typeOfNetwork": "Shaw Communications",
+            "cellModelNo": "799228773",
+            "imsi1": "828120726858670",
+            "imsi2": "2410317799J...",
+            "typeOfPlan": "Healthcare Plans",
+            "creditCardType": "Dunkin1",
+            "contractValue": "USD150",
+            "dateOfIssue": "2004-12-08",
+            "dateOfRenewal": "2007-12-08",
+            "installment": "4.596",
+            "amountInWords": "Four Point Five Ninety Six",
+            "remarks": "Not Applicable"
+        };
+        const totalFields = Object.keys(groundTruth).length;
+        const batch = db.batch();
+        
+        for (const doc of pendingForms) {
+            const form = doc.data();
+            let correctFields = totalFields;
+            let mistakes = [];
+            const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
+            
+            for (const key in currentGroundTruth) {
+                if (form[key] !== currentGroundTruth[key]) {
+                    correctFields--;
+                    mistakes.push(key);
+                }
+            }
+            
+            const score = (correctFields / totalFields) * 100;
+            batch.update(doc.ref, {
+                score,
+                mistakes,
+                status: 'evaluated'
+            });
+        }
+        
         if (pendingForms.length > 0) {
             await batch.commit();
         }
         
-        const updatedSnapshot = await db.collection('forms').where('userId', '==', id).get();
-        const forms = updatedSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            mistakes: typeof doc.data().mistakes === 'string' ? JSON.parse(doc.data().mistakes) : (doc.data().mistakes || [])
-        }));
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Bulk Send evaluated forms to candidate
+app.post('/api/candidates/:id/bulk-send', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        const snapshot = await db.collection('forms').where('userId', '==', id).where('status', '==', 'evaluated').get();
+        const evaluatedForms = snapshot.docs;
         
-        res.json({ success: true, forms });
+        if (evaluatedForms.length === 0) {
+            return res.json({ success: true });
+        }
+        
+        const batch = db.batch();
+        let totalScore = 0;
+        
+        for (const doc of evaluatedForms) {
+            batch.update(doc.ref, { status: 'sent' });
+            totalScore += doc.data().score || 0;
+        }
+        
+        await batch.commit();
+        
+        const avgScore = totalScore / evaluatedForms.length;
+        
+        // Send one bulk email
+        const userDoc = await db.collection('users').doc(id).get();
+        if (userDoc.exists && transporter) {
+            const user = userDoc.data();
+            const mailOptions = {
+                from: process.env.SMTP_FROM || '"Admin Portal" <admin@example.com>',
+                to: user.email,
+                subject: "Your Bulk Form Accuracy Results",
+                html: `
+                    <h2>Bulk Form Evaluation Result</h2>
+                    <p>Hi ${user.name},</p>
+                    <p>Your recent ${evaluatedForms.length} submitted forms have been evaluated.</p>
+                    <h3 style="color: ${avgScore >= 80 ? 'green' : 'red'};">Average Accuracy Score: ${avgScore.toFixed(1)}%</h3>
+                    <p>Please log into the app to see details of your forms.</p>
+                `
+            };
+            transporter.sendMail(mailOptions).catch(err => console.error("Error sending bulk accuracy email:", err.message));
+        }
+        
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

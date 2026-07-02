@@ -47,6 +47,8 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
     'File No': TextEditingController(),
     'Reference No': TextEditingController(),
     'Sim No': TextEditingController(),
+    'Type Of Network': TextEditingController(),
+    'Cell Model No': TextEditingController(),
     'IMSI 1': TextEditingController(),
     'IMSI 2': TextEditingController(),
     'Type Of Plan': TextEditingController(),
@@ -108,6 +110,11 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
     'sim no': 'Sim No',
     'simno': 'Sim No',
     'sim number': 'Sim No',
+    'type of network': 'Type Of Network',
+    'network': 'Type Of Network',
+    'cell model no': 'Cell Model No',
+    'cellmodelno': 'Cell Model No',
+    'model no': 'Cell Model No',
     'imsi 1': 'IMSI 1',
     'imsi1': 'IMSI 1',
     'imsi 2': 'IMSI 2',
@@ -221,6 +228,10 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
       'ref no': 'Reference No',
       'sim no': 'Sim No',
       'sim number': 'Sim No',
+      'type of network': 'Type Of Network',
+      'network': 'Type Of Network',
+      'cell model no': 'Cell Model No',
+      'model no': 'Cell Model No',
       'imsi 1': 'IMSI 1',
       'imsi 2': 'IMSI 2',
       'type of plan': 'Type Of Plan',
@@ -236,15 +247,52 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
 
     final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
 
-    // Strategy 1: "Label: Value" on same line (e.g. "Serial No: 1")
+    // Strategy 1: "Label: Value" on same line (e.g. "Serial No: 1                             Title: Miss")
     for (final line in lines) {
-      final colonIdx = line.indexOf(':');
-      if (colonIdx > 0 && colonIdx < line.length - 1) {
-        final rawLabel = line.substring(0, colonIdx).trim().toLowerCase();
-        final value = line.substring(colonIdx + 1).trim();
-        final fieldKey = labelMap[rawLabel];
-        if (fieldKey != null && value.isNotEmpty) {
-          record[fieldKey] = value;
+      final lineLower = line.toLowerCase();
+      List<int> colonIndices = [];
+      for (int i = 0; i < line.length; i++) {
+        if (line[i] == ':') colonIndices.add(i);
+      }
+
+      if (colonIndices.isEmpty) continue;
+
+      String? currentLabelKey;
+      int currentValueStart = 0;
+
+      for (int i = 0; i < colonIndices.length; i++) {
+        int c = colonIndices[i];
+        String textBeforeColon = lineLower.substring(currentValueStart, c).trimRight();
+        
+        String? foundLabel;
+        for (final label in labelMap.keys) {
+          if (textBeforeColon.endsWith(label)) {
+            int labelStartIdx = textBeforeColon.length - label.length;
+            if (labelStartIdx == 0 || textBeforeColon[labelStartIdx - 1] == ' ' || textBeforeColon[labelStartIdx - 1] == '\t') {
+              if (foundLabel == null || label.length > foundLabel.length) {
+                foundLabel = label;
+              }
+            }
+          }
+        }
+
+        if (foundLabel != null) {
+          int labelStartIdx = textBeforeColon.length - foundLabel.length;
+          if (currentLabelKey != null) {
+            String value = line.substring(currentValueStart, currentValueStart + labelStartIdx).trim();
+            if (value.isNotEmpty) {
+              record[labelMap[currentLabelKey]!] = value;
+            }
+          }
+          currentLabelKey = foundLabel;
+          currentValueStart = c + 1;
+        }
+      }
+
+      if (currentLabelKey != null) {
+        String value = line.substring(currentValueStart).trim();
+        if (value.isNotEmpty) {
+          record[labelMap[currentLabelKey]!] = value;
         }
       }
     }
@@ -341,38 +389,20 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
 
   void _handleUpload() async {
     final user = ref.read(authViewModelProvider).currentUser;
-    final int dailyTarget = (user != null && user['dailyTarget'] != null)
-        ? user['dailyTarget']
-        : 0;
     final int monthlyTarget = (user != null && user['monthlyTarget'] != null)
         ? user['monthlyTarget']
         : 0;
 
-    final existingForms = ref.read(projectStateProvider);
-
-    int submittedCountAllTime = 0;
-    int submittedCountToday = 0;
-    if (user != null) {
-      final result = await FirebaseFirestore.instance.collection('forms')
-          .where('userId', isEqualTo: user['id'])
-          .get();
-          
-      final todayStr = DateTime.now().toIso8601String().substring(0, 10);
-      
-      for (var doc in result.docs) {
-        final data = doc.data();
-        if (data['status'] == 'archived') continue;
-        submittedCountAllTime++;
-        if (data['submittedDate'] == todayStr) {
-          submittedCountToday++;
-        }
-      }
-    }
+    final userId = (user != null) ? (user['id'] ?? user['username'] ?? '') as String : '';
     
-    final totalActiveForms = existingForms.length + submittedCountAllTime;
-    final totalDailyForms = existingForms.length + submittedCountToday;
+    int currentMonthlyForms = 0;
+    if (userId.isNotEmpty) {
+        final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+        final currentMonthStr = todayStr.substring(0, 7);
+        currentMonthlyForms = await FormRepository().getFormsCountForUser(userId, monthStr: currentMonthStr);
+    }
 
-    if (monthlyTarget <= 0 || totalActiveForms >= monthlyTarget) {
+    if (monthlyTarget <= 0 || currentMonthlyForms >= monthlyTarget) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -383,24 +413,8 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
       }
       return;
     }
-    
-    if (dailyTarget <= 0 || totalDailyForms >= dailyTarget) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('You have reached your daily target limit! You cannot upload more forms today.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
-    int remainingMonthly = monthlyTarget - totalActiveForms;
-    int remainingDaily = dailyTarget - totalDailyForms;
-    
-    final int maxAllowed = remainingDaily < remainingMonthly ? remainingDaily : remainingMonthly;
-    final int count = maxAllowed > 0 ? maxAllowed : 1;
+    int remainingMonthly = monthlyTarget - currentMonthlyForms;
+    final int count = remainingMonthly > 0 ? remainingMonthly : 1;
 
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -463,8 +477,17 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
 
   String _r(String key) => _currentRecord[key] ?? '';
 
-  void _handleSave() {
+  Future<bool> _saveCurrentForm() async {
     final serialNo = _controllers['Serial No']!.text.trim();
+    if (serialNo.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill out the form before saving.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
 
     // Check for duplicates
     final existingForms = ref.read(projectStateProvider);
@@ -478,7 +501,7 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
           backgroundColor: Colors.red,
         ),
       );
-      return;
+      return false;
     }
 
     final data = FormDataModel(
@@ -501,6 +524,8 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
       fileNo: _controllers['File No']!.text,
       referenceNo: _controllers['Reference No']!.text,
       simNo: _controllers['Sim No']!.text,
+      typeOfNetwork: _controllers['Type Of Network']!.text,
+      cellModelNo: _controllers['Cell Model No']!.text,
       imsi1: _controllers['IMSI 1']!.text,
       imsi2: _controllers['IMSI 2']!.text,
       typeOfPlan: _controllers['Type Of Plan']!.text,
@@ -513,7 +538,22 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
       remarks: _controllers['Remarks']!.text,
     );
 
-    ref.read(projectStateProvider.notifier).addForm(data);
+    if (!data.isComplete) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill out ALL fields properly before saving!'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
+
+    await ref.read(projectStateProvider.notifier).addForm(data);
+    return true;
+  }
+
+  void _handleSave() async {
+    if (!await _saveCurrentForm()) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Submitted successfully!')),
@@ -542,23 +582,23 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
   }
 
   void _handleFinalSubmit() async {
+    if (!await _saveCurrentForm()) return; // Save current form before submitting
+
     final user = ref.read(authViewModelProvider).currentUser;
     final forms = ref.read(projectStateProvider);
-    final int dailyTarget = (user != null && user['dailyTarget'] != null)
-        ? user['dailyTarget']
+    final int monthlyTarget = (user != null && user['monthlyTarget'] != null)
+        ? user['monthlyTarget']
         : 0;
-
-    bool isComplete = true;
-    if (forms.length < dailyTarget) {
-      isComplete = false;
-    } else {
-      for (final form in forms) {
-        if (!form.isComplete) {
-          isComplete = false;
-          break;
-        }
-      }
+    final userId = (user != null) ? (user['id'] ?? user['username'] ?? '') as String : '';
+    
+    int currentMonthlyForms = 0;
+    if (userId.isNotEmpty) {
+final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+        final currentMonthStr = todayStr.substring(0, 7);
+        currentMonthlyForms = await FormRepository().getFormsCountForUser(userId, monthStr: currentMonthStr);
     }
+
+    bool isComplete = currentMonthlyForms >= monthlyTarget;
 
     if (!isComplete) {
       // Instantly block the user ID in the database
@@ -566,7 +606,7 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
       ref.read(authViewModelProvider.notifier).logout(); // Log them out
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => BlockedScreen(targetCount: dailyTarget)),
+          MaterialPageRoute(builder: (context) => BlockedScreen(targetCount: monthlyTarget)),
           (route) => false,
         );
       }
@@ -578,7 +618,8 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
         }
       }
 
-      ref.read(projectStateProvider.notifier).clearForms();
+      // We keep the forms in state so progress counters remain accurate
+      // ref.read(projectStateProvider.notifier).clearForms();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -679,6 +720,7 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
                         _buildDetailRow('Mailing Postal', _r('Mailing Postal'), 'Mailing Country', _r('Mailing Country')),
                         _buildDetailRow('Service Provider', _r('Service Provider'), 'File No', _r('File No')),
                         _buildDetailRow('Reference No', _r('Reference No'), 'Sim No', _r('Sim No')),
+                        _buildDetailRow('Type Of Network', _r('Type Of Network'), 'Cell Model No', _r('Cell Model No')),
                         _buildDetailRow('IMSI 1', _r('IMSI 1'), 'IMSI 2', _r('IMSI 2')),
                         _buildDetailRow('Type Of Plan', _r('Type Of Plan'), 'Credit Card Type', _r('Credit Card Type')),
                         _buildDetailRow('Contract Value', _r('Contract Value'), 'Date Of Issue', _r('Date Of Issue')),
@@ -707,6 +749,7 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
                         _buildInputRow('Mailing Postal', 'Mailing Country'),
                         _buildInputRow('Service Provider', 'File No'),
                         _buildInputRow('Reference No', 'Sim No'),
+                        _buildInputRow('Type Of Network', 'Cell Model No'),
                         _buildInputRow('IMSI 1', 'IMSI 2'),
                         _buildInputRow('Type Of Plan', 'Credit Card Type'),
                         _buildInputRow('Contract Value', 'Date Of Issue'),

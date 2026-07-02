@@ -9,13 +9,13 @@ class ScoreSummaryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     int totalForms = forms.length;
-    double totalScore = 0;
+    double totalScoreSum = 0;
     
     for (var form in forms) {
-      totalScore += form.score ?? 0.0;
+      totalScoreSum += form.score ?? 100.0;
     }
     
-    double averageScore = totalForms > 0 ? totalScore / totalForms : 0.0;
+    double averageScore = totalForms > 0 ? (totalScoreSum / totalForms) : 0.0;
 
     return Scaffold(
       backgroundColor: Colors.white,

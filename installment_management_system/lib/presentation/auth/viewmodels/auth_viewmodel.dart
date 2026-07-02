@@ -148,8 +148,9 @@ class AuthViewModel extends Notifier<AuthState> {
           isLoading: false,
           isBlocked: true,
           currentUser: user,
+          error: 'User ID is blocked, contact admin for support',
         );
-        return false; // Return false so OTP screen isn't shown
+        return false;
       }
 
       // Success. Generate OTP.

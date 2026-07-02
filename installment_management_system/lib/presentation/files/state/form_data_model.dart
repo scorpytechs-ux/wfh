@@ -18,6 +18,8 @@ class FormDataModel {
   final String fileNo;
   final String referenceNo;
   final String simNo;
+  final String typeOfNetwork;
+  final String cellModelNo;
   final String imsi1;
   final String imsi2;
   final String typeOfPlan;
@@ -31,6 +33,7 @@ class FormDataModel {
   final double? score;
   final List<String>? mistakes;
   final String status;
+  final String? submittedDate;
 
   FormDataModel({
     required this.id,
@@ -52,6 +55,8 @@ class FormDataModel {
     required this.fileNo,
     required this.referenceNo,
     required this.simNo,
+    required this.typeOfNetwork,
+    required this.cellModelNo,
     required this.imsi1,
     required this.imsi2,
     required this.typeOfPlan,
@@ -65,7 +70,8 @@ class FormDataModel {
     this.score,
     this.mistakes,
     this.status = 'pending',
-  });
+    String? submittedDate,
+  }) : this.submittedDate = submittedDate ?? DateTime.now().toIso8601String().substring(0, 10);
 
   bool get isComplete {
     return serialNo.trim().isNotEmpty &&
@@ -86,6 +92,8 @@ class FormDataModel {
         fileNo.trim().isNotEmpty &&
         referenceNo.trim().isNotEmpty &&
         simNo.trim().isNotEmpty &&
+        typeOfNetwork.trim().isNotEmpty &&
+        cellModelNo.trim().isNotEmpty &&
         imsi1.trim().isNotEmpty &&
         imsi2.trim().isNotEmpty &&
         typeOfPlan.trim().isNotEmpty &&
@@ -118,6 +126,8 @@ class FormDataModel {
     String? fileNo,
     String? referenceNo,
     String? simNo,
+    String? typeOfNetwork,
+    String? cellModelNo,
     String? imsi1,
     String? imsi2,
     String? typeOfPlan,
@@ -131,6 +141,7 @@ class FormDataModel {
     double? score,
     List<String>? mistakes,
     String? status,
+    String? submittedDate,
   }) {
     return FormDataModel(
       id: id ?? this.id,
@@ -152,6 +163,8 @@ class FormDataModel {
       fileNo: fileNo ?? this.fileNo,
       referenceNo: referenceNo ?? this.referenceNo,
       simNo: simNo ?? this.simNo,
+      typeOfNetwork: typeOfNetwork ?? this.typeOfNetwork,
+      cellModelNo: cellModelNo ?? this.cellModelNo,
       imsi1: imsi1 ?? this.imsi1,
       imsi2: imsi2 ?? this.imsi2,
       typeOfPlan: typeOfPlan ?? this.typeOfPlan,
@@ -165,6 +178,7 @@ class FormDataModel {
       score: score ?? this.score,
       mistakes: mistakes ?? this.mistakes,
       status: status ?? this.status,
+      submittedDate: submittedDate ?? this.submittedDate,
     );
   }
 }

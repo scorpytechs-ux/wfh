@@ -11,7 +11,7 @@ class EmailService {
 
     try {
       final response = await http.post(
-        Uri.parse('https://wfh-g77r.onrender.com/api/auth/otp'),
+        Uri.parse('http://127.0.0.1:5000/api/auth/otp'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': email,

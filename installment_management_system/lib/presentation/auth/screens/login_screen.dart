@@ -36,10 +36,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     final success = await ref.read(authViewModelProvider.notifier).login(username, password);
 
-    if (success && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const OtpScreen()),
-      );
+    if (mounted) {
+      final authState = ref.read(authViewModelProvider);
+      if (authState.isBlocked) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Access Denied'),
+            content: const Text('User ID is blocked, contact admin for support'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      } else if (success) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const OtpScreen()),
+        );
+      }
     }
   }
 

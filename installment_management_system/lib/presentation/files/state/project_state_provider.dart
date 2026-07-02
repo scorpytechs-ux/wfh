@@ -55,12 +55,43 @@ class ProjectStateNotifier extends Notifier<List<FormDataModel>> {
     return [];
   }
 
-  Future<void> _loadForms(String userId) async {
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool get hasMore => _hasMore;
+
+  Future<void> _loadForms(String userId, {bool refresh = true}) async {
     try {
-      final forms = await _repository.getFormsForUser(userId);
-      state = forms;
+      if (refresh) {
+        _currentPage = 1;
+        _hasMore = true;
+      }
+      
+      final forms = await _repository.getFormsForUser(userId, page: _currentPage, limit: 50);
+      
+      if (forms.length < 50) {
+        _hasMore = false;
+      }
+      
+      if (refresh) {
+        state = forms;
+      } else {
+        state = [...state, ...forms];
+      }
     } catch (e) {
       // Keep current state on error
+    }
+  }
+
+  Future<void> loadMoreForms() async {
+    if (!_hasMore) return;
+    
+    final user = ref.read(authViewModelProvider).currentUser;
+    if (user != null) {
+      final userId = (user['id'] ?? user['username'] ?? '') as String;
+      if (userId.isNotEmpty) {
+        _currentPage++;
+        await _loadForms(userId, refresh: false);
+      }
     }
   }
 

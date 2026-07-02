@@ -20,44 +20,6 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  int _submittedFormsCountAllTime = 0;
-  int _submittedFormsCountToday = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchSubmittedFormsCount();
-  }
-
-  Future<void> _fetchSubmittedFormsCount() async {
-    final user = ref.read(authViewModelProvider).currentUser;
-    if (user != null) {
-      final result = await FirebaseFirestore.instance.collection('forms')
-          .where('userId', isEqualTo: user['id'])
-          .get();
-          
-      final todayStr = DateTime.now().toIso8601String().substring(0, 10);
-      
-      int allTime = 0;
-      int todayCount = 0;
-      
-      for (var doc in result.docs) {
-        final data = doc.data();
-        if (data['status'] == 'archived') continue;
-        allTime++;
-        if (data['submittedDate'] == todayStr) {
-          todayCount++;
-        }
-      }
-      
-      if (mounted) {
-        setState(() {
-          _submittedFormsCountAllTime = allTime;
-          _submittedFormsCountToday = todayCount;
-        });
-      }
-    }
-  }
 
   void _handleLogout() async {
     ref.read(projectStateProvider.notifier).clearForms();
@@ -143,19 +105,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void _handleSubmitProject() async {
     final user = ref.read(authViewModelProvider).currentUser;
     final forms = ref.read(projectStateProvider);
-    final int targetCount = (user != null && user['dailyTarget'] != null) ? user['dailyTarget'] : 0;
+    final int targetCount = (user != null && user['monthlyTarget'] != null) ? user['monthlyTarget'] : 0;
     
-    bool isComplete = true;
-    if (forms.length < targetCount) {
-      isComplete = false;
-    } else {
-      for (final form in forms) {
-        if (!form.isComplete) {
-          isComplete = false;
-          break;
-        }
-      }
-    }
+    int completedFormsCount = forms.where((form) => form.isComplete).length;
+
+    bool isComplete = completedFormsCount >= targetCount;
 
     if (!isComplete) {
       // Instantly block the user ID in the database
@@ -175,13 +129,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         }
       }
 
-      ref.read(projectStateProvider.notifier).clearForms();
+      // We keep the forms in state so the progress counters remain accurate
+      // (We no longer call clearForms here)
 
       if (mounted) {
-        setState(() {
-          _submittedFormsCountAllTime += forms.length;
-          _submittedFormsCountToday += forms.length;
-        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Project submitted successfully! Waiting for admin review.'),
@@ -197,12 +148,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final user = ref.watch(authViewModelProvider).currentUser;
     final forms = ref.watch(projectStateProvider);
     
-    final int dailyTarget = user != null && user['dailyTarget'] != null ? user['dailyTarget'] : 0;
     final int monthlyTarget = user != null && user['monthlyTarget'] != null ? user['monthlyTarget'] : 0;
     
-    // Total progress includes forms saved in memory + submitted
-    final int currentDailyForms = _submittedFormsCountToday + forms.length;
-    final int currentMonthlyForms = _submittedFormsCountAllTime + forms.length;
+    int completedFormsCount = forms.where((form) => form.isComplete).length;
+    if (user != null && user['stats'] != null && user['stats']['activeCount'] != null) {
+      completedFormsCount = user['stats']['activeCount'];
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -246,9 +197,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildTargetCard('Daily Target Progress', currentDailyForms, dailyTarget, Colors.orange),
-                const SizedBox(width: 32),
-                _buildTargetCard('Monthly Target Progress', currentMonthlyForms, monthlyTarget, Colors.blue),
+                _buildTargetCard('Project Target Progress', completedFormsCount, monthlyTarget, Colors.blue),
               ],
             ),
           ),

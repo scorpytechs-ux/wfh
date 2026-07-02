@@ -27,10 +27,9 @@ class _ScoredFormsScreenState extends ConsumerState<ScoredFormsScreen> {
     final user = ref.read(authViewModelProvider).currentUser;
     if (user != null) {
       final formRepo = FormRepository();
-      final allForms = await formRepo.getFormsForUser(user['id']);
-      final sentForms = allForms.where((f) => f.status == 'sent').toList();
+      final allForms = await formRepo.getSentFormsForUser(user['id']);
       setState(() {
-        _forms = sentForms;
+        _forms = allForms;
         _isLoading = false;
       });
     } else {

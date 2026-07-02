@@ -116,6 +116,18 @@ class FileListTab extends ConsumerWidget {
                             }).toList(),
                           ),
                         ),
+                        if (ref.read(projectStateProvider.notifier).hasMore)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16.0),
+                            child: Center(
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  ref.read(projectStateProvider.notifier).loadMoreForms();
+                                },
+                                child: const Text('Load More'),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
             ),
