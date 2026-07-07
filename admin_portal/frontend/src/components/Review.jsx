@@ -65,7 +65,6 @@ export default function Review() {
         setArchivedCount(res.data.stats.archivedCount);
       }
   };
-  }, [id, navigate]);
 
   const handleEvaluate = async (formId) => {
     try {
