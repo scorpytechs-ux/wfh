@@ -35,7 +35,7 @@ export default function Review() {
     // Fetch active forms
     const fetchActive = () => {
       setLoading(true);
-      axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/forms?page=${currentPage}&limit=${formsPerPage}&status=active`)
+      axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/candidates/${id}/forms?page=${currentPage}&limit=${formsPerPage}&status=active`)
         .then(res => {
           setActiveForms(res.data.forms);
           if (res.data.stats) {
@@ -48,7 +48,7 @@ export default function Review() {
     };
 
     const fetchArchived = () => {
-      axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/forms?page=${archivedPage}&limit=${formsPerPage}&status=archived`)
+      axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/candidates/${id}/forms?page=${archivedPage}&limit=${formsPerPage}&status=archived`)
         .then(res => setArchivedForms(res.data.forms));
     };
 
@@ -57,7 +57,7 @@ export default function Review() {
   }, [id, navigate, currentPage, archivedPage]);
 
   const fetchActiveRef = async () => {
-      const res = await axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/forms?page=${currentPage}&limit=${formsPerPage}&status=active`);
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/candidates/${id}/forms?page=${currentPage}&limit=${formsPerPage}&status=active`);
       setActiveForms(res.data.forms);
       if (res.data.stats) {
         setOverallScore(res.data.stats.overallScore);
@@ -68,7 +68,7 @@ export default function Review() {
 
   const handleEvaluate = async (formId) => {
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/forms/${formId}/evaluate`);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/forms/${formId}/evaluate`);
       setActiveForms(activeForms.map(f => f.id === formId ? { ...f, score: res.data.score, mistakes: res.data.mistakes, status: res.data.status } : f));
     } catch (err) {
       alert('Evaluation failed');
@@ -83,7 +83,7 @@ export default function Review() {
     }
     
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/forms/${formId}/admin-score`, { targetScore: parseFloat(targetScore) });
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/forms/${formId}/admin-score`, { targetScore: parseFloat(targetScore) });
       setActiveForms(activeForms.map(f => f.id === formId ? { ...f, ...res.data.updatedFields, score: res.data.score, mistakes: res.data.mistakes, status: res.data.status } : f));
       alert('Admin score applied and mistakes injected!');
     } catch (err) {
@@ -93,7 +93,7 @@ export default function Review() {
 
   const handleSend = async (formId) => {
     try {
-      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/forms/${formId}/send`);
+      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/forms/${formId}/send`);
       setActiveForms(activeForms.map(f => f.id === formId ? { ...f, status: 'sent' } : f));
       alert('Score sent to candidate successfully!');
     } catch (err) {
@@ -108,7 +108,7 @@ export default function Review() {
     }
     setBulking(true);
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/bulk-score`, { targetScore: parseFloat(bulkScore) });
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/candidates/${id}/bulk-score`, { targetScore: parseFloat(bulkScore) });
       await fetchActiveRef();
       alert('Bulk score applied and mistakes injected for all pending forms!');
     } catch (err) {
@@ -121,7 +121,7 @@ export default function Review() {
   const handleBulkEvaluate = async () => {
     setBulking(true);
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/bulk-evaluate`);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/candidates/${id}/bulk-evaluate`);
       await fetchActiveRef();
       alert('Bulk auto-evaluation completed!');
     } catch (err) {
@@ -134,7 +134,7 @@ export default function Review() {
   const handleBulkSend = async () => {
     setBulking(true);
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/bulk-send`);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/candidates/${id}/bulk-send`);
       await fetchActiveRef();
       alert('Bulk send completed!');
     } catch (err) {
@@ -165,7 +165,7 @@ export default function Review() {
   const handleSaveEarnings = async () => {
     setSaving(true);
     try {
-      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/earnings`, { earnings: parseFloat(earnings) });
+      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/candidates/${id}/earnings`, { earnings: parseFloat(earnings) });
       alert('Earnings saved successfully!');
     } catch (err) {
       alert('Failed to save earnings');
@@ -177,7 +177,7 @@ export default function Review() {
   const handleSaveTargets = async () => {
     setSaving(true);
     try {
-      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-g77r.onrender.com'}/api/candidates/${id}/targets`, { 
+      await axios.put(`${import.meta.env.VITE_API_URL || 'https://wfh-2.onrender.com'}/api/candidates/${id}/targets`, { 
         dailyTarget: parseInt(dailyTarget, 10),
         monthlyTarget: parseInt(monthlyTarget, 10)
       });
