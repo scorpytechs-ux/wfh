@@ -728,6 +728,7 @@ final todayStr = DateTime.now().toIso8601String().substring(0, 10);
                             height: 800,
                             child: PdfViewer.data(
                               _uploadedPdfBytes!,
+                              sourceName: 'uploaded_pdf',
                             ),
                           )
                         : Column(
