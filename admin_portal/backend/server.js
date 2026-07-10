@@ -580,11 +580,11 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
         const totalProjectFields = allForms.length * totalFields;
         let totalMistakesToInject = Math.round(totalProjectFields * (1 - (targetScore / 100)));
 
-        // Select forms to be inaccurate (only where serialNo >= 30)
+        // Select forms to be inaccurate (only where serialNo > 30)
         let availableForMistakes = [];
         for (const doc of allForms) {
             const serialNo = parseInt(doc.data().serialNo) || 0;
-            if (serialNo >= 30) {
+            if (serialNo > 30) {
                 availableForMistakes.push(doc);
             }
         }
@@ -631,7 +631,7 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             let updates = {};
             let currentMistakes = [];
             
-            const currentGroundTruth = { ...groundTruth };
+            const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
             const numMistakes = formMistakeCounts.get(doc.id) || 0;
 
             if (numMistakes > 0) {
@@ -722,7 +722,7 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
             const form = doc.data();
             let correctFields = totalFields;
             let mistakes = [];
-            const currentGroundTruth = { ...groundTruth };
+            const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
             
             for (const key in currentGroundTruth) {
                 if (form[key] !== currentGroundTruth[key]) {
