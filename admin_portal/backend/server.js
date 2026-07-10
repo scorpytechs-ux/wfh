@@ -634,7 +634,16 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
             const numMistakes = formMistakeCounts.get(doc.id) || 0;
 
-            if (numMistakes > 0) {
+            const serialNoNum = parseInt(form.serialNo) || 0;
+
+            if (serialNoNum <= 30) {
+                // Keep original as candidate filled
+                for (const key in currentGroundTruth) {
+                    if (form[key] !== currentGroundTruth[key]) {
+                        currentMistakes.push(key);
+                    }
+                }
+            } else if (numMistakes > 0) {
                 const allKeys = Object.keys(currentGroundTruth).filter(key => key !== 'serialNo').sort(() => 0.5 - Math.random());
                 const fieldsToMutate = allKeys.slice(0, numMistakes);
                 
