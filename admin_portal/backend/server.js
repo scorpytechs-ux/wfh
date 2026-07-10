@@ -390,7 +390,7 @@ app.post('/api/forms/:id/admin-score', async (req, res) => {
         let form = doc.data();
         
         const groundTruth = {
-            "serialNo": form.serialNo || "1",
+            "serialNo": "1",
             "title": "Miss.",
             "firstName": "Ashlynn",
             "lastName": "Lipscomb",
@@ -631,7 +631,7 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             let updates = {};
             let currentMistakes = [];
             
-            const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
+            const currentGroundTruth = { ...groundTruth };
             const numMistakes = formMistakeCounts.get(doc.id) || 0;
 
             if (numMistakes > 0) {
@@ -722,7 +722,7 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
             const form = doc.data();
             let correctFields = totalFields;
             let mistakes = [];
-            const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
+            const currentGroundTruth = { ...groundTruth };
             
             for (const key in currentGroundTruth) {
                 if (form[key] !== currentGroundTruth[key]) {
