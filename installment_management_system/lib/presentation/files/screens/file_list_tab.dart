@@ -59,7 +59,6 @@ class FileListTab extends ConsumerWidget {
                               DataColumn(label: Text('Installment')),
                               DataColumn(label: Text('Amount In Words')),
                               DataColumn(label: Text('Remarks')),
-                              DataColumn(label: Text('Action')),
                             ],
                             rows: forms.map((form) {
                               return DataRow(
@@ -93,24 +92,6 @@ class FileListTab extends ConsumerWidget {
                                   DataCell(Text(form.installment)),
                                   DataCell(Text(form.amountInWords)),
                                   DataCell(Text(form.remarks)),
-                                  DataCell(
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.blue, // Blue box with pen from video
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: IconButton(
-                                        icon: const Icon(Icons.edit, color: Colors.white, size: 16),
-                                        onPressed: () {
-                                          Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) => EditFormScreen(formData: form),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
                                 ],
                               );
                             }).toList(),

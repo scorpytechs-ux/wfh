@@ -25,6 +25,9 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
   int _currentFormIndex = 1;
   int _totalForms = 1;
 
+  Uint8List? _uploadedPdfBytes;
+  String? _uploadedFileExtension;
+
   // Parsed rows from the uploaded file — each entry is one record
   List<Map<String, String>> _fileRecords = [];
 
@@ -425,12 +428,15 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
     if (result != null && result.files.isNotEmpty) {
       final file = result.files.first;
       List<Map<String, String>> parsedRecords = [];
+      Uint8List? pdfBytes;
+      String fileExt = file.extension?.toLowerCase() ?? '';
 
       try {
-        if (file.extension == 'csv') {
+        if (fileExt == 'csv') {
           final content = String.fromCharCodes(file.bytes!);
           parsedRecords = _parseCsv(content);
-        } else if (file.extension == 'pdf') {
+        } else if (fileExt == 'pdf') {
+          pdfBytes = file.bytes;
           parsedRecords = await _parsePdf(file.bytes!);
         } else {
           parsedRecords = _parseExcel(file.bytes!.toList());
@@ -466,6 +472,8 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
         _totalForms = recordsToUse.length;
         _currentFormIndex = 1;
         _fileRecords = recordsToUse;
+        _uploadedPdfBytes = pdfBytes;
+        _uploadedFileExtension = fileExt;
       });
     }
   }
@@ -571,6 +579,8 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
         _isFileUploaded = false;
         _currentFormIndex = 1;
         _fileRecords = [];
+        _uploadedPdfBytes = null;
+        _uploadedFileExtension = null;
         for (var controller in _controllers.values) {
           controller.clear();
         }
@@ -632,6 +642,8 @@ final todayStr = DateTime.now().toIso8601String().substring(0, 10);
           _isFileUploaded = false;
           _currentFormIndex = 1;
           _fileRecords = [];
+          _uploadedPdfBytes = null;
+          _uploadedFileExtension = null;
           for (var controller in _controllers.values) {
             controller.clear();
           }
@@ -689,6 +701,8 @@ final todayStr = DateTime.now().toIso8601String().substring(0, 10);
                     _isFileUploaded = false;
                     _currentFormIndex = 1;
                     _fileRecords = [];
+                    _uploadedPdfBytes = null;
+                    _uploadedFileExtension = null;
                     for (var controller in _controllers.values) {
                       controller.clear();
                     }
@@ -709,25 +723,32 @@ final todayStr = DateTime.now().toIso8601String().substring(0, 10);
                   elevation: 2,
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        _buildDetailRow('Serial No', _r('Serial No'), 'Title', _r('Title')),
-                        _buildDetailRow('First Name', _r('First Name'), 'Last Name', _r('Last Name')),
-                        _buildDetailRow('Initial', _r('Initial'), 'Email', _r('Email')),
-                        _buildDetailRow('Father Name', _r('Father Name'), 'DOB', _r('DOB')),
-                        _buildDetailRow('Gender', _r('Gender'), 'Profession', _r('Profession')),
-                        _buildDetailRow('Mailing Street', _r('Mailing Street'), 'Mailing City', _r('Mailing City')),
-                        _buildDetailRow('Mailing Postal', _r('Mailing Postal'), 'Mailing Country', _r('Mailing Country')),
-                        _buildDetailRow('Service Provider', _r('Service Provider'), 'File No', _r('File No')),
-                        _buildDetailRow('Reference No', _r('Reference No'), 'Sim No', _r('Sim No')),
-                        _buildDetailRow('Type Of Network', _r('Type Of Network'), 'Cell Model No', _r('Cell Model No')),
-                        _buildDetailRow('IMSI 1', _r('IMSI 1'), 'IMSI 2', _r('IMSI 2')),
-                        _buildDetailRow('Type Of Plan', _r('Type Of Plan'), 'Credit Card Type', _r('Credit Card Type')),
-                        _buildDetailRow('Contract Value', _r('Contract Value'), 'Date Of Issue', _r('Date Of Issue')),
-                        _buildDetailRow('Date Of Renewal', _r('Date Of Renewal'), 'Installment', _r('Installment')),
-                        _buildDetailRow('Amount In Words', _r('Amount In Words'), 'Remarks', _r('Remarks')),
-                      ],
-                    ),
+                    child: _uploadedFileExtension == 'pdf' && _uploadedPdfBytes != null
+                        ? SizedBox(
+                            height: 800,
+                            child: PdfViewer.data(
+                              _uploadedPdfBytes!,
+                            ),
+                          )
+                        : Column(
+                            children: [
+                              _buildDetailRow('Serial No', _r('Serial No'), 'Title', _r('Title')),
+                              _buildDetailRow('First Name', _r('First Name'), 'Last Name', _r('Last Name')),
+                              _buildDetailRow('Initial', _r('Initial'), 'Email', _r('Email')),
+                              _buildDetailRow('Father Name', _r('Father Name'), 'DOB', _r('DOB')),
+                              _buildDetailRow('Gender', _r('Gender'), 'Profession', _r('Profession')),
+                              _buildDetailRow('Mailing Street', _r('Mailing Street'), 'Mailing City', _r('Mailing City')),
+                              _buildDetailRow('Mailing Postal', _r('Mailing Postal'), 'Mailing Country', _r('Mailing Country')),
+                              _buildDetailRow('Service Provider', _r('Service Provider'), 'File No', _r('File No')),
+                              _buildDetailRow('Reference No', _r('Reference No'), 'Sim No', _r('Sim No')),
+                              _buildDetailRow('Type Of Network', _r('Type Of Network'), 'Cell Model No', _r('Cell Model No')),
+                              _buildDetailRow('IMSI 1', _r('IMSI 1'), 'IMSI 2', _r('IMSI 2')),
+                              _buildDetailRow('Type Of Plan', _r('Type Of Plan'), 'Credit Card Type', _r('Credit Card Type')),
+                              _buildDetailRow('Contract Value', _r('Contract Value'), 'Date Of Issue', _r('Date Of Issue')),
+                              _buildDetailRow('Date Of Renewal', _r('Date Of Renewal'), 'Installment', _r('Installment')),
+                              _buildDetailRow('Amount In Words', _r('Amount In Words'), 'Remarks', _r('Remarks')),
+                            ],
+                          ),
                   ),
                 ),
               ),
