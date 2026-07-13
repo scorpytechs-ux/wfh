@@ -657,19 +657,21 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             let updates = {};
             let currentMistakes = [];
             
-            const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
+            const currentGroundTruth = { ...groundTruth };
             const numMistakes = formMistakeCounts.get(doc.id) || 0;
 
-            const formNum = parseInt(form.formNumber) || (i + 1);
-
-            if (formNum <= 30) {
-                // Keep original as candidate filled
-                for (const key in currentGroundTruth) {
-                    if (form[key] !== currentGroundTruth[key]) {
-                        currentMistakes.push(key);
+            if (!form.originalData) {
+                const originalData = {};
+                const excludeKeys = ['score', 'mistakes', 'status', 'originalData'];
+                for (const key of Object.keys(form)) {
+                    if (!excludeKeys.includes(key)) {
+                        originalData[key] = form[key];
                     }
                 }
-            } else if (numMistakes > 0) {
+                updates.originalData = originalData;
+            }
+
+            if (numMistakes > 0) {
                 const allKeys = Object.keys(currentGroundTruth).filter(key => key !== 'serialNo').sort(() => 0.5 - Math.random());
                 const fieldsToMutate = allKeys.slice(0, numMistakes);
                 
@@ -701,9 +703,9 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
         }
         
         // Update overallScore in user stats
-        await db.collection('users').doc(id).update({
-            'stats.overallScore': parseFloat(targetScore)
-        });
+        await db.collection('users').doc(id).set({
+            stats: { overallScore: parseFloat(targetScore) }
+        }, { merge: true });
         
         res.json({ success: true, overallScore: targetScore });
     } catch (err) {
@@ -715,7 +717,7 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
     const { id } = req.params;
     
     try {
-        const snapshot = await db.collection('forms').where('userId', '==', id).where('status', 'in', ['pending', '']).get();
+        const snapshot = await db.collection('forms').where('userId', '==', id).where('status', 'in', ['pending', '', 'evaluated']).get();
         const pendingForms = snapshot.docs;
         
         const groundTruth = {
@@ -754,7 +756,13 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
         const batch = db.batch();
         
         for (const doc of pendingForms) {
-            const form = doc.data();
+            let form = doc.data();
+            let restoreUpdates = {};
+            if (form.originalData) {
+                form = { ...form, ...form.originalData };
+                restoreUpdates = { ...form.originalData };
+            }
+
             let correctFields = totalFields;
             let mistakes = [];
             const currentGroundTruth = { ...groundTruth };
@@ -770,6 +778,7 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
             
             const score = (correctFields / totalFields) * 100;
             batch.update(doc.ref, {
+                ...restoreUpdates,
                 score,
                 mistakes,
                 status: 'evaluated'
@@ -785,9 +794,9 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
             allFormsSnap.forEach(d => { sumScore += (d.data().score || 0); });
             const avgScore = allFormsSnap.size > 0 ? (sumScore / allFormsSnap.size) : 0;
             
-            await db.collection('users').doc(id).update({
-                'stats.overallScore': parseFloat(avgScore.toFixed(2))
-            });
+            await db.collection('users').doc(id).set({
+                stats: { overallScore: parseFloat(avgScore.toFixed(2)) }
+            }, { merge: true });
         }
         
         res.json({ success: true });
