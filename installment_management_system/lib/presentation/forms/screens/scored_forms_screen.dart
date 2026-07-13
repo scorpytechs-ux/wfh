@@ -1,43 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../../auth/viewmodels/auth_viewmodel.dart';
-import '../../../data/repositories/form_repository.dart';
 import '../../files/state/form_data_model.dart';
 import '../../../core/theme/app_theme.dart';
 
-class ScoredFormsScreen extends ConsumerStatefulWidget {
+class ScoredFormsScreen extends ConsumerWidget {
   const ScoredFormsScreen({super.key});
-
-  @override
-  ConsumerState<ScoredFormsScreen> createState() => _ScoredFormsScreenState();
-}
-
-class _ScoredFormsScreenState extends ConsumerState<ScoredFormsScreen> {
-  bool _isLoading = true;
-  List<FormDataModel> _forms = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadForms();
-  }
-
-  Future<void> _loadForms() async {
-    final user = ref.read(authViewModelProvider).currentUser;
-    if (user != null) {
-      final formRepo = FormRepository();
-      final allForms = await formRepo.getSentFormsForUser(user['id']);
-      setState(() {
-        _forms = allForms;
-        _isLoading = false;
-      });
-    } else {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
 
   Widget _renderField(String label, String value, bool isMistake) {
     return Padding(
@@ -77,7 +47,9 @@ class _ScoredFormsScreenState extends ConsumerState<ScoredFormsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authViewModelProvider).currentUser;
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -86,26 +58,82 @@ class _ScoredFormsScreenState extends ConsumerState<ScoredFormsScreen> {
         elevation: 1,
         iconTheme: const IconThemeData(color: Colors.black87),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _forms.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No reviewed forms available yet.',
-                    style: TextStyle(fontSize: 18, color: Colors.black54),
-                  ),
-                )
-              : ListView.builder(
+      body: user == null
+          ? const Center(child: Text("Not logged in."))
+          : StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('forms')
+                  .where('userId', isEqualTo: user['id'])
+                  .where('status', isEqualTo: 'sent')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No reviewed forms available yet.',
+                      style: TextStyle(fontSize: 18, color: Colors.black54),
+                    ),
+                  );
+                }
+
+                final forms = snapshot.data!.docs.map((doc) {
+                  final docData = doc.data() as Map<String, dynamic>;
+                  List<dynamic> parsedMistakes = [];
+                  if (docData['mistakes'] is String) {
+                    try { parsedMistakes = jsonDecode(docData['mistakes']); } catch (_) {}
+                  } else if (docData['mistakes'] is List) {
+                    parsedMistakes = docData['mistakes'];
+                  }
+                  
+                  return FormDataModel(
+                    id: docData['id'] as String? ?? '',
+                    serialNo: docData['serialNo']?.toString() ?? '',
+                    title: docData['title'] as String? ?? '',
+                    firstName: docData['firstName'] as String? ?? '',
+                    lastName: docData['lastName'] as String? ?? '',
+                    initial: docData['initial'] as String? ?? '',
+                    email: docData['email'] as String? ?? '',
+                    fatherName: docData['fatherName'] as String? ?? '',
+                    dob: docData['dob'] as String? ?? '',
+                    gender: docData['gender'] as String? ?? '',
+                    profession: docData['profession'] as String? ?? '',
+                    mailingStreet: docData['mailingStreet'] as String? ?? '',
+                    mailingCity: docData['mailingCity'] as String? ?? '',
+                    mailingPostal: docData['mailingPostal']?.toString() ?? '',
+                    mailingCountry: docData['mailingCountry'] as String? ?? '',
+                    serviceProvider: docData['serviceProvider'] as String? ?? '',
+                    fileNo: docData['fileNo'] as String? ?? '',
+                    referenceNo: docData['referenceNo'] as String? ?? '',
+                    simNo: docData['simNo'] as String? ?? '',
+                    typeOfNetwork: docData['typeOfNetwork'] as String? ?? '',
+                    cellModelNo: docData['cellModelNo'] as String? ?? '',
+                    imsi1: docData['imsi1'] as String? ?? '',
+                    imsi2: docData['imsi2'] as String? ?? '',
+                    typeOfPlan: docData['typeOfPlan'] as String? ?? '',
+                    creditCardType: docData['creditCardType'] as String? ?? '',
+                    contractValue: docData['contractValue']?.toString() ?? '',
+                    dateOfIssue: docData['dateOfIssue'] as String? ?? '',
+                    dateOfRenewal: docData['dateOfRenewal'] as String? ?? '',
+                    installment: docData['installment']?.toString() ?? '',
+                    amountInWords: docData['amountInWords'] as String? ?? '',
+                    remarks: docData['remarks'] as String? ?? '',
+                    score: (docData['score'] as num?)?.toDouble() ?? 0.0,
+                    mistakes: parsedMistakes.map((e) => e.toString()).toList(),
+                    status: docData['status'] as String? ?? 'pending',
+                    submittedDate: docData['submittedDate'] as String?,
+                  );
+                }).toList();
+
+                return ListView.builder(
                   padding: const EdgeInsets.all(24),
-                  itemCount: _forms.length,
+                  itemCount: forms.length,
                   itemBuilder: (context, index) {
-                    final form = _forms[index];
-                    List<String> mistakesList = [];
-                    try {
-                      if (form.mistakes != null) {
-                        mistakesList = form.mistakes!;
-                      }
-                    } catch (_) {}
+                    final form = forms[index];
+                    final mistakesList = form.mistakes ?? [];
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 24),
@@ -183,7 +211,10 @@ class _ScoredFormsScreenState extends ConsumerState<ScoredFormsScreen> {
                       ),
                     );
                   },
-                ),
+                );
+              },
+            ),
     );
   }
 }
+

@@ -172,7 +172,6 @@ class DatabaseHelper {
       'forms',
       where: 'userId = ? AND status = ?',
       whereArgs: [userId, 'sent'],
-      orderBy: 'serialNo ASC',
     );
   }
 }

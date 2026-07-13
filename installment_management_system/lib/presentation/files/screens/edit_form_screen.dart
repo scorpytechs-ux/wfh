@@ -16,6 +16,12 @@ class EditFormScreen extends ConsumerStatefulWidget {
 class _EditFormScreenState extends ConsumerState<EditFormScreen> {
   @override
   Widget build(BuildContext context) {
+    final forms = ref.watch(projectStateProvider);
+    final formData = forms.firstWhere(
+      (f) => f.id == widget.formData.id,
+      orElse: () => widget.formData,
+    );
+
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       body: SingleChildScrollView(
@@ -30,9 +36,9 @@ class _EditFormScreenState extends ConsumerState<EditFormScreen> {
             const SizedBox(height: 16),
             Row(
               children: [
-                Text('Details (Form ${widget.formData.serialNo} of 18)', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text('Details (Form ${formData.serialNo} of 18)', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                 const Spacer(),
-                const Text('Form Details', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const Text('Form Details', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                 const Spacer(),
               ],
             ),
@@ -48,20 +54,20 @@ class _EditFormScreenState extends ConsumerState<EditFormScreen> {
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         children: [
-                          _buildDetailRow('Serial No', widget.formData.serialNo, 'serialNo', 'Title', widget.formData.title, 'title'),
-                          _buildDetailRow('First Name', widget.formData.firstName, 'firstName', 'Last Name', widget.formData.lastName, 'lastName'),
-                          _buildDetailRow('Initial', widget.formData.initial, 'initial', 'Email', widget.formData.email, 'email'),
-                          _buildDetailRow('Father Name', widget.formData.fatherName, 'fatherName', 'DOB', widget.formData.dob, 'dob'),
-                          _buildDetailRow('Gender', widget.formData.gender, 'gender', 'Profession', widget.formData.profession, 'profession'),
-                          _buildDetailRow('Mailing Street', widget.formData.mailingStreet, 'mailingStreet', 'Mailing City', widget.formData.mailingCity, 'mailingCity'),
-                          _buildDetailRow('Mailing Postal', widget.formData.mailingPostal, 'mailingPostal', 'Mailing Country', widget.formData.mailingCountry, 'mailingCountry'),
-                          _buildDetailRow('Service Provider', widget.formData.serviceProvider, 'serviceProvider', 'File No', widget.formData.fileNo, 'fileNo'),
-                          _buildDetailRow('Reference No', widget.formData.referenceNo, 'referenceNo', 'Sim No', widget.formData.simNo, 'simNo'),
-                          _buildDetailRow('IMSI 1', widget.formData.imsi1, 'imsi1', 'IMSI 2', widget.formData.imsi2, 'imsi2'),
-                          _buildDetailRow('Type Of Plan', widget.formData.typeOfPlan, 'typeOfPlan', 'Credit Card Type', widget.formData.creditCardType, 'creditCardType'),
-                          _buildDetailRow('Contract Value', widget.formData.contractValue, 'contractValue', 'Date Of Issue', widget.formData.dateOfIssue, 'dateOfIssue'),
-                          _buildDetailRow('Date Of Renewal', widget.formData.dateOfRenewal, 'dateOfRenewal', 'Installment', widget.formData.installment, 'installment'),
-                          _buildDetailRow('Amount In Words', widget.formData.amountInWords, 'amountInWords', 'Remarks', widget.formData.remarks, 'remarks'),
+                          _buildDetailRow('Serial No', formData.serialNo, 'serialNo', 'Title', formData.title, 'title', formData.mistakes),
+                          _buildDetailRow('First Name', formData.firstName, 'firstName', 'Last Name', formData.lastName, 'lastName', formData.mistakes),
+                          _buildDetailRow('Initial', formData.initial, 'initial', 'Email', formData.email, 'email', formData.mistakes),
+                          _buildDetailRow('Father Name', formData.fatherName, 'fatherName', 'DOB', formData.dob, 'dob', formData.mistakes),
+                          _buildDetailRow('Gender', formData.gender, 'gender', 'Profession', formData.profession, 'profession', formData.mistakes),
+                          _buildDetailRow('Mailing Street', formData.mailingStreet, 'mailingStreet', 'Mailing City', formData.mailingCity, 'mailingCity', formData.mistakes),
+                          _buildDetailRow('Mailing Postal', formData.mailingPostal, 'mailingPostal', 'Mailing Country', formData.mailingCountry, 'mailingCountry', formData.mistakes),
+                          _buildDetailRow('Service Provider', formData.serviceProvider, 'serviceProvider', 'File No', formData.fileNo, 'fileNo', formData.mistakes),
+                          _buildDetailRow('Reference No', formData.referenceNo, 'referenceNo', 'Sim No', formData.simNo, 'simNo', formData.mistakes),
+                          _buildDetailRow('IMSI 1', formData.imsi1, 'imsi1', 'IMSI 2', formData.imsi2, 'imsi2', formData.mistakes),
+                          _buildDetailRow('Type Of Plan', formData.typeOfPlan, 'typeOfPlan', 'Credit Card Type', formData.creditCardType, 'creditCardType', formData.mistakes),
+                          _buildDetailRow('Contract Value', formData.contractValue, 'contractValue', 'Date Of Issue', formData.dateOfIssue, 'dateOfIssue', formData.mistakes),
+                          _buildDetailRow('Date Of Renewal', formData.dateOfRenewal, 'dateOfRenewal', 'Installment', formData.installment, 'installment', formData.mistakes),
+                          _buildDetailRow('Amount In Words', formData.amountInWords, 'amountInWords', 'Remarks', formData.remarks, 'remarks', formData.mistakes),
                         ],
                       ),
                     ),
@@ -76,20 +82,20 @@ class _EditFormScreenState extends ConsumerState<EditFormScreen> {
     );
   }
 
-  Widget _buildDetailRow(String label1, String val1, String key1, String label2, String val2, String key2) {
+  Widget _buildDetailRow(String label1, String val1, String key1, String label2, String val2, String key2, List<String>? mistakes) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          Expanded(child: _buildDetailItem(label1, val1, key1)),
-          Expanded(child: _buildDetailItem(label2, val2, key2)),
+          Expanded(child: _buildDetailItem(label1, val1, key1, mistakes)),
+          Expanded(child: _buildDetailItem(label2, val2, key2, mistakes)),
         ],
       ),
     );
   }
 
-  Widget _buildDetailItem(String label, String value, String key) {
-    final isMistake = widget.formData.mistakes?.contains(key) ?? false;
+  Widget _buildDetailItem(String label, String value, String key, List<String>? mistakes) {
+    final isMistake = mistakes?.contains(key) ?? false;
     
     return Container(
       padding: const EdgeInsets.all(6.0),

@@ -497,20 +497,7 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
       return false;
     }
 
-    // Check for duplicates
-    final existingForms = ref.read(projectStateProvider);
-    final isDuplicate = existingForms.any(
-        (form) => form.serialNo == serialNo && form.serialNo.isNotEmpty);
-
-    if (isDuplicate) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error: A form with this Serial No has already been submitted! Forms cannot be exactly the same.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return false;
-    }
+    // Removed duplicate check based on serialNo as per requirements.
 
     final data = FormDataModel(
       id: const Uuid().v4(),

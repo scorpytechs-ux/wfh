@@ -82,6 +82,7 @@ async function seedForms(userId) {
         batch.set(formRef, {
             ...groundTruth,
             serialNo: i.toString(),
+            formNumber: i,
             userId: userId,
             status: 'pending',
             submittedDate: todayStr,

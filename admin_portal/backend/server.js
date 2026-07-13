@@ -304,7 +304,23 @@ app.get('/api/candidates/:id/forms', async (req, res) => {
                 mistakes: typeof data.mistakes === 'string' ? JSON.parse(data.mistakes) : (data.mistakes || [])
             });
         });
-        res.json({ forms });
+
+        const activeQuery = db.collection('forms').where('userId', '==', id).where('status', 'in', ['pending', 'evaluated', 'sent']);
+        const archivedQuery = db.collection('forms').where('userId', '==', id).where('status', '==', 'archived');
+        
+        const activeSnap = await activeQuery.count().get();
+        const archivedSnap = await archivedQuery.count().get();
+        const userDoc = await db.collection('users').doc(id).get();
+        const overallScore = userDoc.data()?.stats?.overallScore || 0;
+
+        res.json({ 
+            forms, 
+            stats: {
+                activeCount: activeSnap.data().count,
+                archivedCount: archivedSnap.data().count,
+                overallScore: overallScore
+            }
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -357,7 +373,9 @@ app.post('/api/forms/:id/evaluate', async (req, res) => {
         let mistakes = [];
         
         for (const key in groundTruth) {
-            if (form[key] !== groundTruth[key]) {
+            const formVal = (form[key] != null) ? String(form[key]).trim() : '';
+            const truthVal = (groundTruth[key] != null) ? String(groundTruth[key]).trim() : '';
+            if (formVal !== truthVal) {
                 correctFields--;
                 mistakes.push(key);
             }
@@ -431,7 +449,9 @@ app.post('/api/forms/:id/admin-score', async (req, res) => {
         let currentCorrect = [];
         
         for (const key in groundTruth) {
-            if (form[key] !== groundTruth[key]) {
+            const formVal = (form[key] != null) ? String(form[key]).trim() : '';
+            const truthVal = (groundTruth[key] != null) ? String(groundTruth[key]).trim() : '';
+            if (formVal !== truthVal) {
                 currentMistakes.push(key);
             } else {
                 currentCorrect.push(key);
@@ -541,8 +561,13 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
     const { targetScore } = req.body;
     
     try {
-        const snapshot = await db.collection('forms').where('userId', '==', id).select('serialNo').get();
+        const snapshot = await db.collection('forms').where('userId', '==', id).get();
         const allForms = snapshot.docs;
+        allForms.sort((a, b) => {
+            const dateA = a.data().createdAt?.toDate ? a.data().createdAt.toDate() : new Date(a.data().createdAt || 0);
+            const dateB = b.data().createdAt?.toDate ? b.data().createdAt.toDate() : new Date(b.data().createdAt || 0);
+            return dateA - dateB;
+        });
         
         const groundTruth = {
             "serialNo": "1",
@@ -580,14 +605,14 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
         const totalProjectFields = allForms.length * totalFields;
         let totalMistakesToInject = Math.round(totalProjectFields * (1 - (targetScore / 100)));
 
-        // Select forms to be inaccurate (only where serialNo > 30)
+        // Select forms to be inaccurate (only where formNumber > 30)
         let availableForMistakes = [];
-        for (const doc of allForms) {
-            const serialNo = parseInt(doc.data().serialNo) || 0;
-            if (serialNo > 30) {
+        allForms.forEach((doc, idx) => {
+            const formNumber = parseInt(doc.data().formNumber) || (idx + 1);
+            if (formNumber > 30) {
                 availableForMistakes.push(doc);
             }
-        }
+        });
 
         // --- DEVELOPMENT/TESTING FALLBACK ---
         if (availableForMistakes.length === 0 && allForms.length < 30) {
@@ -626,7 +651,8 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
 
         const batch = db.batch();
 
-        for (const doc of allForms) {
+        for (let i = 0; i < allForms.length; i++) {
+            const doc = allForms[i];
             let form = doc.data();
             let updates = {};
             let currentMistakes = [];
@@ -634,9 +660,9 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
             const numMistakes = formMistakeCounts.get(doc.id) || 0;
 
-            const serialNoNum = parseInt(form.serialNo) || 0;
+            const formNum = parseInt(form.formNumber) || (i + 1);
 
-            if (serialNoNum <= 30) {
+            if (formNum <= 30) {
                 // Keep original as candidate filled
                 for (const key in currentGroundTruth) {
                     if (form[key] !== currentGroundTruth[key]) {
@@ -731,10 +757,12 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
             const form = doc.data();
             let correctFields = totalFields;
             let mistakes = [];
-            const currentGroundTruth = { ...groundTruth, serialNo: form.serialNo || groundTruth.serialNo };
+            const currentGroundTruth = { ...groundTruth };
             
             for (const key in currentGroundTruth) {
-                if (form[key] !== currentGroundTruth[key]) {
+                const formVal = (form[key] != null) ? String(form[key]).trim() : '';
+                const truthVal = (currentGroundTruth[key] != null) ? String(currentGroundTruth[key]).trim() : '';
+                if (formVal !== truthVal) {
                     correctFields--;
                     mistakes.push(key);
                 }
@@ -750,6 +778,16 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
         
         if (pendingForms.length > 0) {
             await batch.commit();
+
+            // Re-calculate overall score for all forms
+            const allFormsSnap = await db.collection('forms').where('userId', '==', id).where('status', 'in', ['evaluated', 'sent']).get();
+            let sumScore = 0;
+            allFormsSnap.forEach(d => { sumScore += (d.data().score || 0); });
+            const avgScore = allFormsSnap.size > 0 ? (sumScore / allFormsSnap.size) : 0;
+            
+            await db.collection('users').doc(id).update({
+                'stats.overallScore': parseFloat(avgScore.toFixed(2))
+            });
         }
         
         res.json({ success: true });

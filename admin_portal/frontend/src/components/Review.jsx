@@ -377,7 +377,7 @@ export default function Review() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <CheckCircle2 color="var(--success)" size={20} />
                       <span style={{ fontSize: '18px', fontWeight: '600' }}>
-                        Serial No: {form.serialNo}
+                        Form: {form.formNumber || ((currentPage - 1) * formsPerPage + index + 1)}
                       </span>
                     </div>
                     <span style={{ color: 'var(--text-muted)' }}>
@@ -491,7 +491,7 @@ export default function Review() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <CheckCircle2 color="var(--text-muted)" size={20} />
                       <span style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-muted)' }}>
-                        Serial No: {form.serialNo}
+                        Form: {form.formNumber || ((archivedPage - 1) * formsPerPage + index + 1)}
                       </span>
                     </div>
                     <span style={{ color: 'var(--text-muted)' }}>

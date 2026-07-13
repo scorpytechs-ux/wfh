@@ -22,7 +22,7 @@ def create_pdf(path):
     c.setFont("Helvetica-Bold", 24)
     c.drawString(50, height - 50, "Demo Customer Form")
     
-    c.setFont("Helvetica", 12)
+    c.setFont("Helvetica", 14)
     c.drawString(50, height - 80, "Please use this form as a reference for data entry.")
     
     # Draw a line
@@ -63,24 +63,24 @@ def create_pdf(path):
     }
     
     y_position = height - 130
-    x_col1 = 50
-    x_col2 = 300
+    x_col1 = 40
+    x_col2 = 320
     
     col = 1
     for key, value in data.items():
         if col == 1:
-            c.setFont("Helvetica-Bold", 10)
+            c.setFont("Helvetica-Bold", 11)
             c.drawString(x_col1, y_position, f"{key}:")
-            c.setFont("Helvetica", 10)
-            c.drawString(x_col1 + 100, y_position, value)
+            c.setFont("Helvetica", 11)
+            c.drawString(x_col1 + 110, y_position, value)
             col = 2
         else:
-            c.setFont("Helvetica-Bold", 10)
+            c.setFont("Helvetica-Bold", 11)
             c.drawString(x_col2, y_position, f"{key}:")
-            c.setFont("Helvetica", 10)
-            c.drawString(x_col2 + 120, y_position, value)
+            c.setFont("Helvetica", 11)
+            c.drawString(x_col2 + 110, y_position, value)
             col = 1
-            y_position -= 30
+            y_position -= 35
             
             if y_position < 50:
                 c.showPage()
