@@ -1,11 +1,14 @@
 import 'dart:typed_data';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+import 'dart:convert';
 import 'package:excel/excel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:uuid/uuid.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_theme.dart';
 import '../state/form_data_model.dart';
 import '../state/project_state_provider.dart';
@@ -65,6 +68,106 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
   };
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreUploadSession();
+    });
+  }
+
+  Future<void> _saveUploadSession() async {
+    final user = ref.read(authViewModelProvider).currentUser;
+    final userId = (user != null) ? (user['id'] ?? user['username'] ?? '') as String : '';
+    if (userId.isEmpty) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('session_records_$userId', jsonEncode(_fileRecords));
+      await prefs.setString('session_ext_$userId', _uploadedFileExtension ?? '');
+      await prefs.setInt('session_total_$userId', _totalForms);
+
+      if (_uploadedPdfBytes != null) {
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/temp_pdf_$userId.pdf');
+        await file.writeAsBytes(_uploadedPdfBytes!);
+      }
+    } catch (e) {
+      print('Error saving upload session: $e');
+    }
+  }
+
+  Future<void> _clearUploadSession() async {
+    final user = ref.read(authViewModelProvider).currentUser;
+    final userId = (user != null) ? (user['id'] ?? user['username'] ?? '') as String : '';
+    if (userId.isEmpty) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('session_records_$userId');
+      await prefs.remove('session_ext_$userId');
+      await prefs.remove('session_total_$userId');
+
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/temp_pdf_$userId.pdf');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      print('Error clearing upload session: $e');
+    }
+  }
+
+  Future<void> _restoreUploadSession() async {
+    final user = ref.read(authViewModelProvider).currentUser;
+    final userId = (user != null) ? (user['id'] ?? user['username'] ?? '') as String : '';
+    if (userId.isEmpty) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final recordsStr = prefs.getString('session_records_$userId');
+      final ext = prefs.getString('session_ext_$userId');
+      final total = prefs.getInt('session_total_$userId');
+
+      if (recordsStr != null && recordsStr.isNotEmpty && total != null && total > 0) {
+        List<dynamic> jsonList = jsonDecode(recordsStr);
+        List<Map<String, String>> records = jsonList.map((e) => Map<String, String>.from(e as Map)).toList();
+
+        Uint8List? pdfBytes;
+        if (ext == 'pdf') {
+          try {
+            final dir = await getApplicationDocumentsDirectory();
+            final file = File('${dir.path}/temp_pdf_$userId.pdf');
+            if (await file.exists()) {
+              pdfBytes = await file.readAsBytes();
+            }
+          } catch (_) {}
+        }
+
+        final existingForms = ref.read(projectStateProvider);
+        int savedCount = existingForms.length;
+        int startIndex = savedCount + 1;
+        if (startIndex > records.length) {
+          startIndex = records.length;
+        }
+        if (startIndex < 1) startIndex = 1;
+
+        if (mounted) {
+          setState(() {
+            _isFileUploaded = true;
+            _fileRecords = records;
+            _totalForms = records.length;
+            _uploadedFileExtension = ext;
+            _uploadedPdfBytes = pdfBytes;
+            _currentFormIndex = startIndex;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error restoring upload session: $e');
+    }
+  }
+
+  @override
   void dispose() {
     for (var controller in _controllers.values) {
       controller.dispose();
@@ -76,68 +179,112 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
   static const Map<String, String> _columnMap = {
     'serial no': 'Serial No',
     'serialno': 'Serial No',
+    'serial_no': 'Serial No',
     'serial number': 'Serial No',
     'title': 'Title',
     'first name': 'First Name',
     'firstname': 'First Name',
+    'first_name': 'First Name',
     'last name': 'Last Name',
     'lastname': 'Last Name',
+    'last_name': 'Last Name',
     'initial': 'Initial',
     'initials': 'Initial',
     'email': 'Email',
+    'email address': 'Email',
+    'email_address': 'Email',
     'father name': 'Father Name',
     'fathername': 'Father Name',
+    'father_name': 'Father Name',
     'dob': 'DOB',
     'date of birth': 'DOB',
+    'date_of_birth': 'DOB',
     'gender': 'Gender',
     'profession': 'Profession',
     'mailing street': 'Mailing Street',
     'mailingstreet': 'Mailing Street',
+    'mailing_street': 'Mailing Street',
     'mailing city': 'Mailing City',
     'mailingcity': 'Mailing City',
+    'mailing_city': 'Mailing City',
     'mailing postal': 'Mailing Postal',
     'mailingpostal': 'Mailing Postal',
+    'mailing_postal': 'Mailing Postal',
     'mailing postal code': 'Mailing Postal',
     'postal': 'Mailing Postal',
+    'postal_code': 'Mailing Postal',
     'mailing country': 'Mailing Country',
     'mailingcountry': 'Mailing Country',
+    'mailing_country': 'Mailing Country',
     'country': 'Mailing Country',
     'service provider': 'Service Provider',
     'serviceprovider': 'Service Provider',
+    'service_provider': 'Service Provider',
     'file no': 'File No',
     'fileno': 'File No',
+    'file_no': 'File No',
     'file number': 'File No',
     'reference no': 'Reference No',
     'referenceno': 'Reference No',
+    'reference_no': 'Reference No',
     'ref no': 'Reference No',
+    'ref_no': 'Reference No',
     'sim no': 'Sim No',
     'simno': 'Sim No',
+    'sim_no': 'Sim No',
     'sim number': 'Sim No',
     'type of network': 'Type Of Network',
+    'typeofnetwork': 'Type Of Network',
+    'type_of_network': 'Type Of Network',
     'network': 'Type Of Network',
     'cell model no': 'Cell Model No',
     'cellmodelno': 'Cell Model No',
+    'cell_model_no': 'Cell Model No',
     'model no': 'Cell Model No',
+    'model_no': 'Cell Model No',
     'imsi 1': 'IMSI 1',
     'imsi1': 'IMSI 1',
+    'imsi_1': 'IMSI 1',
     'imsi 2': 'IMSI 2',
     'imsi2': 'IMSI 2',
+    'imsi_2': 'IMSI 2',
     'type of plan': 'Type Of Plan',
     'typeofplan': 'Type Of Plan',
+    'type_of_plan': 'Type Of Plan',
     'plan': 'Type Of Plan',
     'credit card type': 'Credit Card Type',
     'creditcardtype': 'Credit Card Type',
+    'credit_card_type': 'Credit Card Type',
     'contract value': 'Contract Value',
     'contractvalue': 'Contract Value',
+    'contract_value': 'Contract Value',
     'date of issue': 'Date Of Issue',
     'dateofissue': 'Date Of Issue',
+    'date_of_issue': 'Date Of Issue',
     'date of renewal': 'Date Of Renewal',
     'dateofrenewal': 'Date Of Renewal',
+    'date_of_renewal': 'Date Of Renewal',
     'installment': 'Installment',
     'amount in words': 'Amount In Words',
     'amountinwords': 'Amount In Words',
+    'amount_in_words': 'Amount In Words',
     'remarks': 'Remarks',
   };
+
+  /// Safely converts an Excel cell's value to a plain String.
+  /// The `excel` package returns typed wrappers (IntCellValue, DoubleCellValue,
+  /// TextCellValue, etc.). Calling .toString() on the wrapper gives
+  /// "IntCellValue(2)" not "2". We must unwrap the inner value.
+  String _excelCellToString(dynamic cellValue) {
+    if (cellValue == null) return '';
+    final raw = cellValue.value;
+    if (raw == null) return '';
+    if (raw is double) {
+      if (raw == raw.truncateToDouble()) return raw.toInt().toString();
+      return raw.toString();
+    }
+    return raw.toString().trim();
+  }
 
   List<Map<String, String>> _parseExcel(List<int> bytes) {
     final excel = Excel.decodeBytes(bytes);
@@ -146,20 +293,21 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
     final sheet = excel.sheets.values.first;
     if (sheet.rows.isEmpty) return records;
 
-    // First row is headers
-    final headers = sheet.rows.first
-        .map((cell) => cell?.value?.toString().trim().toLowerCase() ?? '')
+    final mappedHeaders = sheet.rows.first
+        .map((cell) {
+          final raw = _excelCellToString(cell?.value);
+          return _matchColumnKey(raw);
+        })
         .toList();
 
     for (int i = 1; i < sheet.rows.length; i++) {
       final row = sheet.rows[i];
       final record = <String, String>{};
 
-      for (int j = 0; j < headers.length; j++) {
-        final header = headers[j];
-        final mappedKey = _columnMap[header];
+      for (int j = 0; j < mappedHeaders.length; j++) {
+        final mappedKey = mappedHeaders[j];
         if (mappedKey != null) {
-          final cellValue = j < row.length ? row[j]?.value?.toString().trim() ?? '' : '';
+          final cellValue = j < row.length ? _excelCellToString(row[j]?.value) : '';
           record[mappedKey] = cellValue;
         }
       }
@@ -172,21 +320,110 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
     return records;
   }
 
+  static String? _matchColumnKey(String rawHeader) {
+    if (rawHeader.isEmpty) return null;
+
+    // Clean header: strip BOM (\uFEFF), ï»¿ artifacts, quotes, and whitespace
+    String clean = rawHeader
+        .replaceAll('\uFEFF', '')
+        .replaceAll('ï»¿', '')
+        .replaceAll('"', '')
+        .replaceAll("'", '')
+        .trim();
+
+    String lower = clean.toLowerCase();
+    if (_columnMap.containsKey(lower)) {
+      return _columnMap[lower];
+    }
+
+    // Strip trailing punctuation e.g. "Serial No." -> "serial no"
+    String noDot = lower.replaceAll(RegExp(r'[\.\:\_\-]+$'), '').trim();
+    if (_columnMap.containsKey(noDot)) {
+      return _columnMap[noDot];
+    }
+
+    // Alphanumeric fallback e.g. "sr.no" -> "srno", "s.no" -> "sno", "serial-no" -> "serialno"
+    String alphaOnly = lower.replaceAll(RegExp(r'[^a-z0-9]'), '');
+    for (final entry in _columnMap.entries) {
+      String keyAlpha = entry.key.replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (keyAlpha == alphaOnly) {
+        return entry.value;
+      }
+    }
+
+    return null;
+  }
+
+  /// RFC 4180-compliant CSV tokenizer.
+  /// Correctly handles:
+  ///   - Fields quoted with double-quotes that contain commas, newlines, or quotes
+  ///   - Escaped double-quotes inside quoted fields ("")
+  ///   - CRLF (\r\n) and LF (\n) line endings
+  List<String> _tokenizeCsvRow(String row) {
+    final fields = <String>[];
+    final sb = StringBuffer();
+    bool inQuotes = false;
+    int i = 0;
+    while (i < row.length) {
+      final ch = row[i];
+      if (inQuotes) {
+        if (ch == '"') {
+          // Peek next char — if also '"' it's an escaped quote inside a field
+          if (i + 1 < row.length && row[i + 1] == '"') {
+            sb.write('"');
+            i += 2;
+          } else {
+            inQuotes = false;
+            i++;
+          }
+        } else {
+          sb.write(ch);
+          i++;
+        }
+      } else {
+        if (ch == '"') {
+          inQuotes = true;
+          i++;
+        } else if (ch == ',') {
+          fields.add(sb.toString());
+          sb.clear();
+          i++;
+        } else {
+          sb.write(ch);
+          i++;
+        }
+      }
+    }
+    fields.add(sb.toString()); // last field
+    return fields;
+  }
+
   List<Map<String, String>> _parseCsv(String content) {
     final records = <Map<String, String>>[];
-    final lines = content.split('\n').where((l) => l.trim().isNotEmpty).toList();
+
+    // Strip BOM and ï»¿ artifacts from content
+    String stripped = content.replaceAll('\uFEFF', '').replaceAll('ï»¿', '');
+
+    // Normalize line endings
+    final normalized = stripped.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final lines = normalized.split('\n').where((l) => l.isNotEmpty).toList();
     if (lines.isEmpty) return records;
 
-    final headers = lines.first.split(',').map((h) => h.trim().toLowerCase().replaceAll('"', '')).toList();
+    // Parse header row with the proper tokenizer
+    final rawHeaders = _tokenizeCsvRow(lines.first);
+    final mappedHeaders = rawHeaders.map((h) => _matchColumnKey(h)).toList();
 
     for (int i = 1; i < lines.length; i++) {
-      final values = lines[i].split(',').map((v) => v.trim().replaceAll('"', '')).toList();
+      final line = lines[i].trim();
+      if (line.isEmpty) continue;
+
+      final values = _tokenizeCsvRow(line);
       final record = <String, String>{};
 
-      for (int j = 0; j < headers.length; j++) {
-        final mappedKey = _columnMap[headers[j]];
+      for (int j = 0; j < mappedHeaders.length; j++) {
+        final mappedKey = mappedHeaders[j];
         if (mappedKey != null) {
-          record[mappedKey] = j < values.length ? values[j] : '';
+          record[mappedKey] = j < values.length ? values[j].trim() : '';
         }
       }
 
@@ -433,7 +670,7 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
 
       try {
         if (fileExt == 'csv') {
-          final content = String.fromCharCodes(file.bytes!);
+          final content = utf8.decode(file.bytes!, allowMalformed: true);
           parsedRecords = _parseCsv(content);
         } else if (fileExt == 'pdf') {
           pdfBytes = file.bytes;
@@ -467,14 +704,24 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
 
       ref.read(targetFormCountProvider.notifier).setCount(recordsToUse.length);
 
+      final existingForms = ref.read(projectStateProvider);
+      int savedCount = existingForms.length;
+      int startIndex = savedCount + 1;
+      if (startIndex > recordsToUse.length) {
+        startIndex = recordsToUse.length;
+      }
+      if (startIndex < 1) startIndex = 1;
+
       setState(() {
         _isFileUploaded = true;
         _totalForms = recordsToUse.length;
-        _currentFormIndex = 1;
+        _currentFormIndex = startIndex;
         _fileRecords = recordsToUse;
         _uploadedPdfBytes = pdfBytes;
         _uploadedFileExtension = fileExt;
       });
+
+      await _saveUploadSession();
     }
   }
 
@@ -498,6 +745,42 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
     }
 
     // Removed duplicate check based on serialNo as per requirements.
+
+    final currentRec = _currentRecord;
+    final Map<String, String> groundTruthMap = currentRec.isNotEmpty 
+        ? Map<String, String>.from(currentRec) 
+        : {
+            'Serial No': _controllers['Serial No']!.text,
+            'Title': _controllers['Title']!.text,
+            'First Name': _controllers['First Name']!.text,
+            'Last Name': _controllers['Last Name']!.text,
+            'Initial': _controllers['Initial']!.text,
+            'Email': _controllers['Email']!.text,
+            'Father Name': _controllers['Father Name']!.text,
+            'DOB': _controllers['DOB']!.text,
+            'Gender': _controllers['Gender']!.text,
+            'Profession': _controllers['Profession']!.text,
+            'Mailing Street': _controllers['Mailing Street']!.text,
+            'Mailing City': _controllers['Mailing City']!.text,
+            'Mailing Postal': _controllers['Mailing Postal']!.text,
+            'Mailing Country': _controllers['Mailing Country']!.text,
+            'Service Provider': _controllers['Service Provider']!.text,
+            'File No': _controllers['File No']!.text,
+            'Reference No': _controllers['Reference No']!.text,
+            'Sim No': _controllers['Sim No']!.text,
+            'Type Of Network': _controllers['Type Of Network']!.text,
+            'Cell Model No': _controllers['Cell Model No']!.text,
+            'IMSI 1': _controllers['IMSI 1']!.text,
+            'IMSI 2': _controllers['IMSI 2']!.text,
+            'Type Of Plan': _controllers['Type Of Plan']!.text,
+            'Credit Card Type': _controllers['Credit Card Type']!.text,
+            'Contract Value': _controllers['Contract Value']!.text,
+            'Date Of Issue': _controllers['Date Of Issue']!.text,
+            'Date Of Renewal': _controllers['Date Of Renewal']!.text,
+            'Installment': _controllers['Installment']!.text,
+            'Amount In Words': _controllers['Amount In Words']!.text,
+            'Remarks': _controllers['Remarks']!.text,
+          };
 
     final data = FormDataModel(
       id: const Uuid().v4(),
@@ -531,6 +814,8 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
       installment: _controllers['Installment']!.text,
       amountInWords: _controllers['Amount In Words']!.text,
       remarks: _controllers['Remarks']!.text,
+      formNumber: _currentFormIndex,
+      groundTruth: groundTruthMap,
     );
 
     if (!data.isComplete) {
@@ -561,7 +846,9 @@ class _UploadFileTabState extends ConsumerState<UploadFileTab> {
           controller.clear();
         }
       });
+      await _saveUploadSession();
     } else {
+      await _clearUploadSession();
       setState(() {
         _isFileUploaded = false;
         _currentFormIndex = 1;
@@ -617,6 +904,8 @@ final todayStr = DateTime.now().toIso8601String().substring(0, 10);
 
       // We keep the forms in state so progress counters remain accurate
       // ref.read(projectStateProvider.notifier).clearForms();
+
+      await _clearUploadSession();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -675,15 +964,42 @@ final todayStr = DateTime.now().toIso8601String().substring(0, 10);
         children: [
           Row(
             children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios, size: 18),
+                onPressed: _currentFormIndex > 1
+                    ? () {
+                        setState(() {
+                          _currentFormIndex--;
+                          for (var controller in _controllers.values) {
+                            controller.clear();
+                          }
+                        });
+                      }
+                    : null,
+              ),
               Text(
                 'Details (Form $_currentFormIndex of $_totalForms)',
                 style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.arrow_forward_ios, size: 18),
+                onPressed: _currentFormIndex < _totalForms
+                    ? () {
+                        setState(() {
+                          _currentFormIndex++;
+                          for (var controller in _controllers.values) {
+                            controller.clear();
+                          }
+                        });
+                      }
+                    : null,
               ),
               const Spacer(),
               const Text('Form Details', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               const Spacer(),
               TextButton.icon(
-                onPressed: () {
+                onPressed: () async {
+                  await _clearUploadSession();
                   setState(() {
                     _isFileUploaded = false;
                     _currentFormIndex = 1;

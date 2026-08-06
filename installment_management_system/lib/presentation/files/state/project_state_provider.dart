@@ -87,6 +87,14 @@ class ProjectStateNotifier extends Notifier<List<FormDataModel>> {
           parsedMistakes = docData['mistakes'];
         }
 
+        final rawCreated = docData['createdAt'];
+        String? createdStr;
+        if (rawCreated is String) {
+          createdStr = rawCreated;
+        } else if (rawCreated != null && rawCreated.toDate != null) {
+          createdStr = rawCreated.toDate().toIso8601String();
+        }
+
         parsedForms.add(FormDataModel(
           id: docData['id'] as String? ?? '',
           serialNo: docData['serialNo']?.toString() ?? '',
@@ -123,9 +131,27 @@ class ProjectStateNotifier extends Notifier<List<FormDataModel>> {
           mistakes: parsedMistakes.map((e) => e.toString()).toList(),
           status: status,
           submittedDate: docData['submittedDate'] as String?,
+          createdAt: createdStr,
+          formNumber: docData['formNumber'] as int?,
         ));
       }
       
+      // Sort by formNumber ascending so Form 1 (#1) is always #1, Form 2 (#2) is always #2
+      parsedForms.sort((a, b) {
+        if (a.formNumber != null && b.formNumber != null) {
+          return a.formNumber!.compareTo(b.formNumber!);
+        }
+        int? numA = int.tryParse(a.serialNo);
+        int? numB = int.tryParse(b.serialNo);
+        if (numA != null && numB != null) {
+          return numA.compareTo(numB);
+        }
+        if (a.createdAt != null && b.createdAt != null) {
+          return a.createdAt!.compareTo(b.createdAt!);
+        }
+        return 0;
+      });
+
       _allForms = parsedForms;
       _updatePaginatedState();
     });

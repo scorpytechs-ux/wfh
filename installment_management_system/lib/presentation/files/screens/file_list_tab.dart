@@ -41,11 +41,13 @@ class FileListTab extends ConsumerWidget {
                               DataColumn(label: Text('Profession')),
                               DataColumn(label: Text('Action')),
                             ],
-                            rows: forms.map((form) {
+                            rows: forms.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final form = entry.value;
                               return DataRow(
                                 cells: [
+                                  DataCell(Text(form.formNumber != null ? '${form.formNumber}' : '${index + 1}')),
                                   DataCell(Text(form.serialNo.isEmpty ? '-' : form.serialNo)),
-                                  DataCell(Text(form.serialNo)),
                                   DataCell(Text(form.title)),
                                   DataCell(Text(form.firstName)),
                                   DataCell(Text(form.lastName)),

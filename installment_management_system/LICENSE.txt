@@ -1,0 +1,25 @@
+===============================================================================
+END USER LICENSE AGREEMENT (EULA)
+For Installment Management System
+===============================================================================
+
+PLEASE READ THIS LICENSE AGREEMENT CAREFULLY BEFORE INSTALLING OR USING THIS SOFTWARE.
+
+1. GRANT OF LICENSE
+Subject to the terms of this Agreement, the Developer grants you a non-exclusive, non-transferable license to install and use the Installment Management System application on authorized Windows desktop systems.
+
+2. LICENSE RESTRICTIONS
+You shall not:
+(a) Modify, reverse engineer, decompile, or disassemble the Software.
+(b) Rent, lease, lend, sell, redistribute, or sublicense the Software without authorization.
+(c) Remove or alter any copyright notices or license validation keys on the Software.
+
+3. SOFTWARE DISCLAIMER
+The Software is provided "AS IS" without warranty of any kind, express or implied. The Developer shall not be liable for any indirect, special, or consequential damages arising out of the use or inability to use this software.
+
+4. TERMINATION
+This license is effective until terminated. Your rights under this license will terminate automatically without notice if you fail to comply with any of its terms.
+
+===============================================================================
+By installing this application, you agree to be bound by the terms of this EULA.
+===============================================================================

@@ -48,19 +48,33 @@ class AuthRepository {
     }
   }
 
-  Future<Map<String, dynamic>?> loginUser(String username, String password) async {
-    final result = await _db.collection('users')
-        .where('username', isEqualTo: username)
-        .where('password', isEqualTo: password)
-        .get();
+  Future<Map<String, dynamic>?> loginUser(String identifier, String password) async {
+    try {
+      // 1. Try matching by username first
+      var result = await _db.collection('users')
+          .where('username', isEqualTo: identifier)
+          .where('password', isEqualTo: password)
+          .get();
 
-    if (result.docs.isNotEmpty) {
-      final doc = result.docs.first;
-      final data = doc.data();
-      data['id'] = doc.id;
-      return data;
+      // 2. If not found, try matching by email
+      if (result.docs.isEmpty) {
+        result = await _db.collection('users')
+            .where('email', isEqualTo: identifier)
+            .where('password', isEqualTo: password)
+            .get();
+      }
+
+      if (result.docs.isNotEmpty) {
+        final doc = result.docs.first;
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }
+      return null;
+    } catch (e) {
+      print("Error in loginUser repository: $e");
+      return null;
     }
-    return null;
   }
 
   // --- ADMIN FEATURES ---

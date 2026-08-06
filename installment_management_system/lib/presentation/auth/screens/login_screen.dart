@@ -24,17 +24,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _handleLogin() async {
-    final username = _usernameController.text.trim();
+    final usernameOrEmail = _usernameController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (username.isEmpty || password.isEmpty) {
+    if (usernameOrEmail.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('!!! Required')),
+        const SnackBar(
+          content: Text('Please enter your email/username and password.'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
       return;
     }
 
-    final success = await ref.read(authViewModelProvider.notifier).login(username, password);
+    final success = await ref.read(authViewModelProvider.notifier).login(usernameOrEmail, password);
 
     if (mounted) {
       final authState = ref.read(authViewModelProvider);
@@ -43,7 +46,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Access Denied'),
-            content: const Text('User ID is blocked, contact admin for support'),
+            content: const Text('User ID is blocked, please contact admin for support.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -89,7 +92,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text(
-                        'Login as User',
+                        'Login to System',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -99,24 +102,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(height: 16),
                       if (authState.error != null)
                         Container(
-                          padding: const EdgeInsets.all(8),
-                          color: Colors.red.shade100,
-                          child: Text(
-                            authState.error!,
-                            style: const TextStyle(color: Colors.red),
-                            textAlign: TextAlign.center,
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red.shade300),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  authState.error!,
+                                  style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       const SizedBox(height: 16),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Username', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                          const Text('Email / Username', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _usernameController,
                             decoration: const InputDecoration(
-                              hintText: 'Enter Username',
+                              hintText: 'Enter Email or Username',
                               filled: true,
                               fillColor: Color(0xFFF1F5F9),
                             ),

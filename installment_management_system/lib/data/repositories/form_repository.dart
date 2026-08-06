@@ -41,12 +41,15 @@ class FormRepository {
       'amountInWords': form.amountInWords,
       'remarks': form.remarks,
       'score': form.score ?? 0.0,
-      'mistakes': form.mistakes != null ? form.mistakes : [],
-      'status': form.status ?? 'pending',
+      'mistakes': form.mistakes ?? [],
+      'status': form.status,
       'submittedDate': form.submittedDate ?? DateTime.now().toIso8601String().substring(0, 10),
+      'createdAt': form.createdAt ?? DateTime.now().toIso8601String(),
+      if (form.formNumber != null) 'formNumber': form.formNumber,
+      if (form.groundTruth != null) 'groundTruth': form.groundTruth,
     };
 
-    await _db.collection('forms').doc(form.id).set(map);
+    await _db.collection('forms').doc(form.id).set(map, SetOptions(merge: true));
   }
 
   Future<int> getFormsCountForUser(String userId, {String? monthStr}) async {
@@ -93,6 +96,14 @@ class FormRepository {
           parsedMistakes = docData['mistakes'];
         }
 
+        final rawCreated = docData['createdAt'];
+        String? createdStr;
+        if (rawCreated is String) {
+          createdStr = rawCreated;
+        } else if (rawCreated != null && rawCreated.toDate != null) {
+          createdStr = rawCreated.toDate().toIso8601String();
+        }
+
         parsedForms.add(FormDataModel(
           id: docData['id'] as String? ?? '',
           serialNo: docData['serialNo']?.toString() ?? '',
@@ -129,6 +140,8 @@ class FormRepository {
           mistakes: parsedMistakes.map((e) => e.toString()).toList(),
           status: status,
           submittedDate: docData['submittedDate'] as String?,
+          createdAt: createdStr,
+          formNumber: docData['formNumber'] as int?,
         ));
       }
       
@@ -201,6 +214,7 @@ class FormRepository {
           mistakes: parsedMistakes.map((e) => e.toString()).toList(),
           status: status,
           submittedDate: docData['submittedDate'] as String?,
+          formNumber: docData['formNumber'] as int?,
         ));
       }
       return parsedForms;

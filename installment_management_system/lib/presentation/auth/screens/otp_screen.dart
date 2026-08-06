@@ -22,13 +22,13 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final email = ref.read(authViewModelProvider).pendingEmail ?? 'your email';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('OTP sent to $email. Please check your console.'),
-          backgroundColor: AppTheme.secondaryColor.withOpacity(0.8),
+          content: Text('OTP sent to $email. Please check your email.'),
+          backgroundColor: AppTheme.secondaryColor.withOpacity(0.9),
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.only(bottom: 20, right: 20, left: 800),
         ),
       );
     });

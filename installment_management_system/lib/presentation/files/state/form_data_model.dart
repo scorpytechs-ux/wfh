@@ -34,6 +34,9 @@ class FormDataModel {
   final List<String>? mistakes;
   final String status;
   final String? submittedDate;
+  final String? createdAt;
+  final int? formNumber;
+  final Map<String, String>? groundTruth;
 
   FormDataModel({
     required this.id,
@@ -71,7 +74,11 @@ class FormDataModel {
     this.mistakes,
     this.status = 'pending',
     String? submittedDate,
-  }) : this.submittedDate = submittedDate ?? DateTime.now().toIso8601String().substring(0, 10);
+    String? createdAt,
+    this.formNumber,
+    this.groundTruth,
+  })  : this.submittedDate = submittedDate ?? DateTime.now().toIso8601String().substring(0, 10),
+        this.createdAt = createdAt ?? DateTime.now().toIso8601String();
 
   bool get isComplete {
     return serialNo.trim().isNotEmpty &&
@@ -142,6 +149,9 @@ class FormDataModel {
     List<String>? mistakes,
     String? status,
     String? submittedDate,
+    String? createdAt,
+    int? formNumber,
+    Map<String, String>? groundTruth,
   }) {
     return FormDataModel(
       id: id ?? this.id,
@@ -179,6 +189,9 @@ class FormDataModel {
       mistakes: mistakes ?? this.mistakes,
       status: status ?? this.status,
       submittedDate: submittedDate ?? this.submittedDate,
+      createdAt: createdAt ?? this.createdAt,
+      formNumber: formNumber ?? this.formNumber,
+      groundTruth: groundTruth ?? this.groundTruth,
     );
   }
 }

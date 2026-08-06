@@ -305,6 +305,23 @@ app.get('/api/candidates/:id/forms', async (req, res) => {
             });
         });
 
+        // Sort forms ascending by formNumber (or serialNo / createdAt ascending)
+        forms.sort((a, b) => {
+            const fnA = a.formNumber != null ? parseInt(a.formNumber, 10) : null;
+            const fnB = b.formNumber != null ? parseInt(b.formNumber, 10) : null;
+            if (fnA !== null && fnB !== null && !isNaN(fnA) && !isNaN(fnB)) {
+                return fnA - fnB;
+            }
+            const snA = parseInt(a.serialNo, 10);
+            const snB = parseInt(b.serialNo, 10);
+            if (!isNaN(snA) && !isNaN(snB)) {
+                return snA - snB;
+            }
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+            return dateA - dateB;
+        });
+
         const activeQuery = db.collection('forms').where('userId', '==', id).where('status', 'in', ['pending', 'evaluated', 'sent']);
         const archivedQuery = db.collection('forms').where('userId', '==', id).where('status', '==', 'archived');
         
@@ -326,6 +343,73 @@ app.get('/api/candidates/:id/forms', async (req, res) => {
     }
 });
 
+// Helper function to extract or build dynamic ground truth for a given form doc
+function getFormGroundTruth(form) {
+    if (form.groundTruth && typeof form.groundTruth === 'object' && Object.keys(form.groundTruth).length > 0) {
+        const gt = {};
+        const keyMap = {
+            'serialNo': 'serialNo', 'Serial No': 'serialNo',
+            'title': 'title', 'Title': 'title',
+            'firstName': 'firstName', 'First Name': 'firstName',
+            'lastName': 'lastName', 'Last Name': 'lastName',
+            'initial': 'initial', 'Initial': 'initial',
+            'email': 'email', 'Email': 'email',
+            'fatherName': 'fatherName', 'Father Name': 'fatherName',
+            'dob': 'dob', 'DOB': 'dob',
+            'gender': 'gender', 'Gender': 'gender',
+            'profession': 'profession', 'Profession': 'profession',
+            'mailingStreet': 'mailingStreet', 'Mailing Street': 'mailingStreet',
+            'mailingCity': 'mailingCity', 'Mailing City': 'mailingCity',
+            'mailingPostal': 'mailingPostal', 'Mailing Postal': 'mailingPostal',
+            'mailingCountry': 'mailingCountry', 'Mailing Country': 'mailingCountry',
+            'serviceProvider': 'serviceProvider', 'Service Provider': 'serviceProvider',
+            'fileNo': 'fileNo', 'File No': 'fileNo',
+            'referenceNo': 'referenceNo', 'Reference No': 'referenceNo',
+            'simNo': 'simNo', 'Sim No': 'simNo',
+            'typeOfNetwork': 'typeOfNetwork', 'Type Of Network': 'typeOfNetwork',
+            'cellModelNo': 'cellModelNo', 'Cell Model No': 'cellModelNo',
+            'imsi1': 'imsi1', 'IMSI 1': 'imsi1',
+            'imsi2': 'imsi2', 'IMSI 2': 'imsi2',
+            'typeOfPlan': 'typeOfPlan', 'Type Of Plan': 'typeOfPlan',
+            'creditCardType': 'creditCardType', 'Credit Card Type': 'creditCardType',
+            'contractValue': 'contractValue', 'Contract Value': 'contractValue',
+            'dateOfIssue': 'dateOfIssue', 'Date Of Issue': 'dateOfIssue',
+            'dateOfRenewal': 'dateOfRenewal', 'Date Of Renewal': 'dateOfRenewal',
+            'installment': 'installment', 'Installment': 'installment',
+            'amountInWords': 'amountInWords', 'Amount In Words': 'amountInWords',
+            'remarks': 'remarks', 'Remarks': 'remarks',
+        };
+        for (const [k, v] of Object.entries(form.groundTruth)) {
+            const normalizedKey = keyMap[k] || k;
+            gt[normalizedKey] = String(v != null ? v : '');
+        }
+        if (Object.keys(gt).length > 0) return gt;
+    }
+
+    if (form.originalData && typeof form.originalData === 'object' && Object.keys(form.originalData).length > 0) {
+        const gt = {};
+        for (const [k, v] of Object.entries(form.originalData)) {
+            gt[k] = String(v != null ? v : '');
+        }
+        if (Object.keys(gt).length > 0) return gt;
+    }
+
+    // Dynamic fallback: build ground truth from the form's own current fields
+    const fields = [
+        'serialNo', 'title', 'firstName', 'lastName', 'initial', 'email',
+        'fatherName', 'dob', 'gender', 'profession', 'mailingStreet', 'mailingCity',
+        'mailingPostal', 'mailingCountry', 'serviceProvider', 'fileNo', 'referenceNo',
+        'simNo', 'typeOfNetwork', 'cellModelNo', 'imsi1', 'imsi2', 'typeOfPlan',
+        'creditCardType', 'contractValue', 'dateOfIssue', 'dateOfRenewal',
+        'installment', 'amountInWords', 'remarks'
+    ];
+    const gt = {};
+    for (const key of fields) {
+        gt[key] = form[key] != null ? String(form[key]) : '';
+    }
+    return gt;
+}
+
 // Evaluate form
 app.post('/api/forms/:id/evaluate', async (req, res) => {
     const { id } = req.params;
@@ -334,39 +418,7 @@ app.post('/api/forms/:id/evaluate', async (req, res) => {
         if (!doc.exists) return res.status(404).json({ error: 'Form not found' });
         
         const form = doc.data();
-        
-        const groundTruth = {
-            "serialNo": "1",
-            "title": "Miss.",
-            "firstName": "Ashlynn",
-            "lastName": "Lipscomb",
-            "initial": "Parish",
-            "email": "ashlynnlipscomb@gmail.com",
-            "fatherName": "Zole",
-            "dob": "2006-08-27",
-            "gender": "Female",
-            "profession": "Shop Manager",
-            "mailingStreet": "777 Elmwood Dr",
-            "mailingCity": "Atlanta",
-            "mailingPostal": "30302",
-            "mailingCountry": "USA",
-            "serviceProvider": "Shaw Communications",
-            "fileNo": "76180379",
-            "referenceNo": "@j_>B...[S|<?6]",
-            "simNo": "49019504522720900000",
-            "typeOfNetwork": "Shaw Communications",
-            "cellModelNo": "799228773",
-            "imsi1": "828120726858670",
-            "imsi2": "2410317799J...",
-            "typeOfPlan": "Healthcare Plans",
-            "creditCardType": "Dunkin1",
-            "contractValue": "USD150",
-            "dateOfIssue": "2004-12-08",
-            "dateOfRenewal": "2007-12-08",
-            "installment": "4.596",
-            "amountInWords": "Four Point Five Ninety Six",
-            "remarks": "Not Applicable"
-        };
+        const groundTruth = getFormGroundTruth(form);
         
         let totalFields = Object.keys(groundTruth).length;
         let correctFields = totalFields;
@@ -381,7 +433,7 @@ app.post('/api/forms/:id/evaluate', async (req, res) => {
             }
         }
         
-        const score = (correctFields / totalFields) * 100;
+        const score = totalFields > 0 ? (correctFields / totalFields) * 100 : 100;
         const status = 'evaluated';
         
         await db.collection('forms').doc(id).update({
@@ -406,39 +458,7 @@ app.post('/api/forms/:id/admin-score', async (req, res) => {
         if (!doc.exists) return res.status(404).json({ error: 'Form not found' });
         
         let form = doc.data();
-        
-        const groundTruth = {
-            "serialNo": "1",
-            "title": "Miss.",
-            "firstName": "Ashlynn",
-            "lastName": "Lipscomb",
-            "initial": "Parish",
-            "email": "ashlynnlipscomb@gmail.com",
-            "fatherName": "Zole",
-            "dob": "2006-08-27",
-            "gender": "Female",
-            "profession": "Shop Manager",
-            "mailingStreet": "777 Elmwood Dr",
-            "mailingCity": "Atlanta",
-            "mailingPostal": "30302",
-            "mailingCountry": "USA",
-            "serviceProvider": "Shaw Communications",
-            "fileNo": "76180379",
-            "referenceNo": "@j_>B...[S|<?6]",
-            "simNo": "49019504522720900000",
-            "typeOfNetwork": "Shaw Communications",
-            "cellModelNo": "799228773",
-            "imsi1": "828120726858670",
-            "imsi2": "2410317799J...",
-            "typeOfPlan": "Healthcare Plans",
-            "creditCardType": "Dunkin1",
-            "contractValue": "USD150",
-            "dateOfIssue": "2004-12-08",
-            "dateOfRenewal": "2007-12-08",
-            "installment": "4.596",
-            "amountInWords": "Four Point Five Ninety Six",
-            "remarks": "Not Applicable"
-        };
+        const groundTruth = getFormGroundTruth(form);
         
         const totalFields = Object.keys(groundTruth).length;
         const targetCorrectFields = Math.max(0, Math.min(totalFields, Math.round((targetScore / 100) * totalFields)));
@@ -477,6 +497,9 @@ app.post('/api/forms/:id/admin-score', async (req, res) => {
         };
         
         let updates = {};
+        if (!form.originalData) {
+            updates.originalData = { ...groundTruth };
+        }
         
         if (currentMistakes.length < targetMistakesCount) {
             // Need to add more mistakes
@@ -504,7 +527,7 @@ app.post('/api/forms/:id/admin-score', async (req, res) => {
         // Apply updates to form
         Object.assign(form, updates);
         
-        const score = ((totalFields - currentMistakes.length) / totalFields) * 100;
+        const score = totalFields > 0 ? ((totalFields - currentMistakes.length) / totalFields) * 100 : 100;
         const status = 'evaluated';
         
         await db.collection('forms').doc(id).update({
@@ -569,39 +592,8 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             return dateA - dateB;
         });
         
-        const groundTruth = {
-            "serialNo": "1",
-            "title": "Miss.",
-            "firstName": "Ashlynn",
-            "lastName": "Lipscomb",
-            "initial": "Parish",
-            "email": "ashlynnlipscomb@gmail.com",
-            "fatherName": "Zole",
-            "dob": "2006-08-27",
-            "gender": "Female",
-            "profession": "Shop Manager",
-            "mailingStreet": "777 Elmwood Dr",
-            "mailingCity": "Atlanta",
-            "mailingPostal": "30302",
-            "mailingCountry": "USA",
-            "serviceProvider": "Shaw Communications",
-            "fileNo": "76180379",
-            "referenceNo": "@j_>B...[S|<?6]",
-            "simNo": "49019504522720900000",
-            "typeOfNetwork": "Shaw Communications",
-            "cellModelNo": "799228773",
-            "imsi1": "828120726858670",
-            "imsi2": "2410317799J...",
-            "typeOfPlan": "Healthcare Plans",
-            "creditCardType": "Dunkin1",
-            "contractValue": "USD150",
-            "dateOfIssue": "2004-12-08",
-            "dateOfRenewal": "2007-12-08",
-            "installment": "4.596",
-            "amountInWords": "Four Point Five Ninety Six",
-            "remarks": "Not Applicable"
-        };
-        const totalFields = Object.keys(groundTruth).length;
+        const sampleGroundTruth = allForms.length > 0 ? getFormGroundTruth(allForms[0].data()) : {};
+        const totalFields = Object.keys(sampleGroundTruth).length || 30;
         const totalProjectFields = allForms.length * totalFields;
         let totalMistakesToInject = Math.round(totalProjectFields * (1 - (targetScore / 100)));
 
@@ -657,18 +649,12 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
             let updates = {};
             let currentMistakes = [];
             
-            const currentGroundTruth = { ...groundTruth };
+            const currentGroundTruth = getFormGroundTruth(form);
             const numMistakes = formMistakeCounts.get(doc.id) || 0;
+            const formTotalFields = Object.keys(currentGroundTruth).length;
 
             if (!form.originalData) {
-                const originalData = {};
-                const excludeKeys = ['score', 'mistakes', 'status', 'originalData'];
-                for (const key of Object.keys(form)) {
-                    if (!excludeKeys.includes(key)) {
-                        originalData[key] = form[key];
-                    }
-                }
-                updates.originalData = originalData;
+                updates.originalData = { ...currentGroundTruth };
             }
 
             if (numMistakes > 0) {
@@ -689,7 +675,7 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
                 }
             }
             
-            const score = ((totalFields - currentMistakes.length) / totalFields) * 100;
+            const score = formTotalFields > 0 ? ((formTotalFields - currentMistakes.length) / formTotalFields) * 100 : 100;
             batch.update(doc.ref, {
                 ...updates,
                 score,
@@ -712,6 +698,7 @@ app.post('/api/candidates/:id/bulk-score', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
 // Bulk Auto Evaluate for a candidate's pending forms
 app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
     const { id } = req.params;
@@ -719,40 +706,6 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
     try {
         const snapshot = await db.collection('forms').where('userId', '==', id).where('status', 'in', ['pending', '', 'evaluated']).get();
         const pendingForms = snapshot.docs;
-        
-        const groundTruth = {
-            "serialNo": "1",
-            "title": "Miss.",
-            "firstName": "Ashlynn",
-            "lastName": "Lipscomb",
-            "initial": "Parish",
-            "email": "ashlynnlipscomb@gmail.com",
-            "fatherName": "Zole",
-            "dob": "2006-08-27",
-            "gender": "Female",
-            "profession": "Shop Manager",
-            "mailingStreet": "777 Elmwood Dr",
-            "mailingCity": "Atlanta",
-            "mailingPostal": "30302",
-            "mailingCountry": "USA",
-            "serviceProvider": "Shaw Communications",
-            "fileNo": "76180379",
-            "referenceNo": "@j_>B...[S|<?6]",
-            "simNo": "49019504522720900000",
-            "typeOfNetwork": "Shaw Communications",
-            "cellModelNo": "799228773",
-            "imsi1": "828120726858670",
-            "imsi2": "2410317799J...",
-            "typeOfPlan": "Healthcare Plans",
-            "creditCardType": "Dunkin1",
-            "contractValue": "USD150",
-            "dateOfIssue": "2004-12-08",
-            "dateOfRenewal": "2007-12-08",
-            "installment": "4.596",
-            "amountInWords": "Four Point Five Ninety Six",
-            "remarks": "Not Applicable"
-        };
-        const totalFields = Object.keys(groundTruth).length;
         const batch = db.batch();
         
         for (const doc of pendingForms) {
@@ -763,9 +716,10 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
                 restoreUpdates = { ...form.originalData };
             }
 
+            const currentGroundTruth = getFormGroundTruth(form);
+            const totalFields = Object.keys(currentGroundTruth).length;
             let correctFields = totalFields;
             let mistakes = [];
-            const currentGroundTruth = { ...groundTruth };
             
             for (const key in currentGroundTruth) {
                 const formVal = (form[key] != null) ? String(form[key]).trim() : '';
@@ -776,7 +730,7 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
                 }
             }
             
-            const score = (correctFields / totalFields) * 100;
+            const score = totalFields > 0 ? (correctFields / totalFields) * 100 : 100;
             batch.update(doc.ref, {
                 ...restoreUpdates,
                 score,

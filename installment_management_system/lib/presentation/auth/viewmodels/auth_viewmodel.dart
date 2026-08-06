@@ -137,42 +137,62 @@ class AuthViewModel extends Notifier<AuthState> {
     }
   }
 
-  Future<bool> login(String username, String password) async {
+  Future<bool> login(String usernameOrEmail, String password) async {
     state = state.copyWith(isLoading: true, clearError: true, isBlocked: false);
 
-    final user = await _repository.loginUser(username, password);
+    try {
+      final user = await _repository.loginUser(usernameOrEmail, password);
 
-    if (user != null) {
-      if (user['isBlocked'] == 1) {
+      if (user != null) {
+        if (user['isBlocked'] == 1) {
+          state = state.copyWith(
+            isLoading: false,
+            isBlocked: true,
+            currentUser: user,
+            error: 'User ID is blocked, please contact admin for support',
+          );
+          return false;
+        }
+
+        final email = (user['email'] as String?)?.trim() ?? '';
+        if (email.isEmpty) {
+          state = state.copyWith(
+            isLoading: false,
+            error: 'No email address registered with this account. Please check your credentials.',
+          );
+          return false;
+        }
+
+        // Success. Generate OTP.
+        final otp = await _emailService.sendOtpEmail(email);
+
+        // Save credentials if remember me
+        if (state.rememberMe) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('remembered_username', usernameOrEmail);
+          await prefs.setString('remembered_password', password);
+        }
+
         state = state.copyWith(
-          isLoading: false,
-          isBlocked: true,
+          isLoading: false, 
           currentUser: user,
-          error: 'User ID is blocked, contact admin for support',
+          pendingOtp: otp,
+          pendingEmail: email,
+        );
+        return true;
+      } else {
+        state = state.copyWith(
+          isLoading: false, 
+          error: 'Invalid email/username or password. Please check your credentials and try again.',
         );
         return false;
       }
-
-      // Success. Generate OTP.
-      final email = user['email'] as String;
-      final otp = await _emailService.sendOtpEmail(email);
-
-      // Save credentials if remember me
-      if (state.rememberMe) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('remembered_username', username);
-        await prefs.setString('remembered_password', password);
-      }
-
+    } catch (e) {
+      print("Login ViewModel error: $e");
       state = state.copyWith(
         isLoading: false, 
-        currentUser: user,
-        pendingOtp: otp,
-        pendingEmail: email,
+        error: 'An error occurred during login. Please check your network connection and try again.',
       );
-      return true;
-    } else {
-      state = state.copyWith(isLoading: false, error: 'Invalid username or password');
       return false;
     }
   }
