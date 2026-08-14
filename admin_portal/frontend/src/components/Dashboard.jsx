@@ -100,8 +100,8 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>
-        <table className="data-table">
+      <div className="glass-card" style={{ padding: '0', overflowX: 'auto' }}>
+        <table className="data-table" style={{ minWidth: '1100px' }}>
           <thead>
             <tr>
               <th>CANDIDATE</th>
@@ -117,7 +117,7 @@ export default function Dashboard() {
             {candidates.map(candidate => {
               const activeDevices = Array.isArray(candidate.activeDevices) ? candidate.activeDevices : [];
               const deviceCount = candidate.deviceCount != null ? candidate.deviceCount : activeDevices.length;
-              const isMultiDeviceBlocked = candidate.isBlocked && (deviceCount >= 2 || (candidate.blockReason && candidate.blockReason.toLowerCase().includes('device')));
+              const isMultiDeviceBlocked = Boolean(candidate.isBlocked) && (deviceCount >= 2 || Boolean(candidate.blockReason && candidate.blockReason.toLowerCase().includes('device')));
 
               return (
                 <tr key={candidate.id}>
@@ -128,11 +128,11 @@ export default function Dashboard() {
                       </div>
                       <div>
                         <span style={{ fontWeight: '600', display: 'block' }}>{candidate.name}</span>
-                        {candidate.blockReason && (
+                        {candidate.blockReason ? (
                           <span style={{ fontSize: '11px', color: '#f87171', display: 'block', marginTop: '2px' }}>
                             {candidate.blockReason}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </td>
@@ -155,15 +155,15 @@ export default function Dashboard() {
                   </td>
                   <td style={{ color: '#4ade80', fontWeight: '600' }}>${(candidate.earnings || 0).toFixed(2)}</td>
                   <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
                       <span className={`badge ${candidate.isBlocked ? 'badge-blocked' : 'badge-active'}`}>
                         {candidate.isBlocked ? 'BLOCKED' : 'ACTIVE'}
                       </span>
-                      {isMultiDeviceBlocked && (
+                      {isMultiDeviceBlocked ? (
                         <span className="badge" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.4)', fontSize: '10px' }}>
                           <AlertTriangle size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} /> MULTI-DEVICE
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </td>
                   <td style={{ textAlign: 'right' }}>
