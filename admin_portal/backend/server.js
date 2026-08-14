@@ -191,6 +191,27 @@ app.post('/api/candidates', async (req, res) => {
     }
 });
 
+// Real-time Firestore Multi-Device Security Monitor
+db.collection('users').where('role', '==', 'candidate').onSnapshot(snapshot => {
+    snapshot.docChanges().forEach(change => {
+        if (change.type === 'modified' || change.type === 'added') {
+            const data = change.doc.data();
+            const activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
+            
+            // If activeDevices >= 2 and candidate is not yet blocked, auto-block candidate in Firestore
+            if (activeDevices.length >= 2 && data.isBlocked !== 1) {
+                console.warn(`[REALTIME SECURITY] Auto-blocking candidate ${data.username} (${change.doc.id}) due to ${activeDevices.length} active devices.`);
+                change.doc.ref.update({
+                    isBlocked: 1,
+                    blockReason: 'Auto-blocked: Simultaneous login detected on 2 or more devices.'
+                }).catch(err => console.error("Snapshot block error:", err.message));
+            }
+        }
+    });
+}, err => {
+    console.error("Firestore candidate monitor error:", err.message);
+});
+
 // POST send OTP & Multi-Device Login Check
 app.post('/api/auth/otp', async (req, res) => {
     const { email, otp } = req.body;
@@ -220,45 +241,37 @@ app.post('/api/auth/otp', async (req, res) => {
 
         // Check if user already has an active device session
         if (activeDevices.length >= 1) {
-            // Check if this request is from the same device (same IP/userAgent) or a new device
-            const existingIdx = activeDevices.findIndex(d => d.ipAddress === ip && d.userAgent === userAgent);
+            // MULTI-DEVICE LOGIN DETECTED!
+            // Candidate is attempting to log in while an active device session already exists!
+            const blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';
+            activeDevices.push({
+                deviceId: `dev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                deviceName: `Secondary Device (${userAgent.includes('Windows') ? 'Windows App' : 'Device'})`,
+                ipAddress: ip,
+                userAgent: userAgent,
+                lastActive: now
+            });
 
-            if (existingIdx === -1) {
-                // MULTI-DEVICE LOGIN DETECTED!
-                // Candidate is logging into a 2nd device at the same time!
-                const blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';
-                activeDevices.push({
-                    deviceId: `dev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                    deviceName: `Device ${activeDevices.length + 1} (${userAgent.includes('Windows') ? 'Windows App' : 'Device'})`,
-                    ipAddress: ip,
-                    userAgent: userAgent,
-                    lastActive: now
-                });
+            await db.collection('users').doc(userDoc.id).update({
+                isBlocked: 1,
+                blockReason,
+                activeDevices,
+                lastOtp: otp
+            });
 
-                await db.collection('users').doc(userDoc.id).update({
-                    isBlocked: 1,
-                    blockReason,
-                    activeDevices,
-                    lastOtp: otp
-                });
+            console.warn(`[MULTI-DEVICE SECURITY ALERT] Candidate ${userData.username} (${userDoc.id}) AUTO-BLOCKED for logging into multiple devices.`);
 
-                console.warn(`[MULTI-DEVICE SECURITY ALERT] Candidate ${userData.username} (${userDoc.id}) AUTO-BLOCKED for logging into multiple devices.`);
-
-                return res.status(403).json({
-                    success: false,
-                    isBlocked: 1,
-                    blockReason,
-                    error: "Account blocked due to simultaneous login on 2 or more devices."
-                });
-            } else {
-                // Update timestamp for existing device
-                activeDevices[existingIdx].lastActive = now;
-            }
+            return res.status(403).json({
+                success: false,
+                isBlocked: 1,
+                blockReason,
+                error: "Account blocked due to simultaneous login on 2 or more devices."
+            });
         } else {
             // First device session for this candidate
             activeDevices.push({
                 deviceId: `dev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                deviceName: `Device 1 (${userAgent.includes('Windows') ? 'Windows App' : 'Device'})`,
+                deviceName: `Primary Device (${userAgent.includes('Windows') ? 'Windows App' : 'Device'})`,
                 ipAddress: ip,
                 userAgent: userAgent,
                 lastActive: now
