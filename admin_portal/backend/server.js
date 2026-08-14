@@ -179,40 +179,111 @@ app.post('/api/candidates', async (req, res) => {
     }
 });
 
-// POST send OTP
+// POST send OTP & Multi-Device Login Check
 app.post('/api/auth/otp', async (req, res) => {
     const { email, otp } = req.body;
-    
-    if (transporter) {
-        try {
-            const mailOptions = {
-                from: process.env.SMTP_FROM || '"Admin Portal" <admin@example.com>',
-                to: email,
-                subject: "Your Login OTP",
-                html: `
-                    <h2>Login Verification</h2>
-                    <p>Your One-Time Password (OTP) for login is:</p>
-                    <h1 style="letter-spacing: 4px; color: #3B82F6;">${otp}</h1>
-                    <p>If you did not request this, please ignore this email.</p>
-                `
-            };
-            const info = await transporter.sendMail(mailOptions);
-            console.log("OTP email sent: %s", info.messageId);
-            
-            // Save the OTP to the database for backup view
-            const snapshot = await db.collection('users').where('email', '==', email).get();
-            if (!snapshot.empty) {
-                const userDoc = snapshot.docs[0];
-                await db.collection('users').doc(userDoc.id).update({ lastOtp: otp });
-            }
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'Windows App';
+    const now = new Date().toISOString();
 
-            return res.json({ success: true });
-        } catch (mailErr) {
-            console.error("Error sending OTP email:", mailErr.message);
-            return res.status(500).json({ error: "Failed to send email" });
+    try {
+        const snapshot = await db.collection('users').where('email', '==', email).get();
+        if (snapshot.empty) {
+            return res.status(404).json({ error: "Candidate email not found" });
         }
-    } else {
-        return res.status(500).json({ error: "Email service not configured" });
+
+        const userDoc = snapshot.docs[0];
+        const userData = userDoc.data();
+
+        // If candidate is already blocked, reject OTP request
+        if (userData.isBlocked === 1) {
+            return res.status(403).json({
+                error: "User account is blocked.",
+                isBlocked: 1,
+                blockReason: userData.blockReason || 'Account is blocked.'
+            });
+        }
+
+        let activeDevices = Array.isArray(userData.activeDevices) ? [...userData.activeDevices] : [];
+
+        // Check if user already has an active device session
+        if (activeDevices.length >= 1) {
+            // Check if this request is from the same device (same IP/userAgent) or a new device
+            const existingIdx = activeDevices.findIndex(d => d.ipAddress === ip && d.userAgent === userAgent);
+
+            if (existingIdx === -1) {
+                // MULTI-DEVICE LOGIN DETECTED!
+                // Candidate is logging into a 2nd device at the same time!
+                const blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';
+                activeDevices.push({
+                    deviceId: `dev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                    deviceName: `Device ${activeDevices.length + 1} (${userAgent.includes('Windows') ? 'Windows App' : 'Device'})`,
+                    ipAddress: ip,
+                    userAgent: userAgent,
+                    lastActive: now
+                });
+
+                await db.collection('users').doc(userDoc.id).update({
+                    isBlocked: 1,
+                    blockReason,
+                    activeDevices,
+                    lastOtp: otp
+                });
+
+                console.warn(`[MULTI-DEVICE SECURITY ALERT] Candidate ${userData.username} (${userDoc.id}) AUTO-BLOCKED for logging into multiple devices.`);
+
+                return res.status(403).json({
+                    success: false,
+                    isBlocked: 1,
+                    blockReason,
+                    error: "Account blocked due to simultaneous login on 2 or more devices."
+                });
+            } else {
+                // Update timestamp for existing device
+                activeDevices[existingIdx].lastActive = now;
+            }
+        } else {
+            // First device session for this candidate
+            activeDevices.push({
+                deviceId: `dev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                deviceName: `Device 1 (${userAgent.includes('Windows') ? 'Windows App' : 'Device'})`,
+                ipAddress: ip,
+                userAgent: userAgent,
+                lastActive: now
+            });
+        }
+
+        await db.collection('users').doc(userDoc.id).update({
+            lastOtp: otp,
+            activeDevices,
+            lastLoginAt: now
+        });
+
+        // Send OTP Email if email transporter is available
+        if (transporter) {
+            try {
+                const mailOptions = {
+                    from: process.env.SMTP_FROM || '"Admin Portal" <admin@example.com>',
+                    to: email,
+                    subject: "Your Login OTP",
+                    html: `
+                        <h2>Login Verification</h2>
+                        <p>Your One-Time Password (OTP) for login is:</p>
+                        <h1 style="letter-spacing: 4px; color: #3B82F6;">${otp}</h1>
+                        <p>If you did not request this, please ignore this email.</p>
+                    `
+                };
+                const info = await transporter.sendMail(mailOptions);
+                console.log("OTP email sent: %s", info.messageId);
+            } catch (mailErr) {
+                console.error("Error sending OTP email:", mailErr.message);
+            }
+        }
+
+        return res.json({ success: true });
+    } catch (err) {
+        console.error("Error in /api/auth/otp:", err.message);
+        return res.status(500).json({ error: err.message });
     }
 });
 
