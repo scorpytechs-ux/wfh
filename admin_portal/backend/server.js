@@ -91,7 +91,15 @@ app.get('/api/candidates', async (req, res) => {
                                  .get();
         const users = [];
         snapshot.forEach(doc => {
-            users.push({ id: doc.id, ...doc.data() });
+            const data = doc.data();
+            const activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
+            users.push({
+                id: doc.id,
+                ...data,
+                activeDevices,
+                deviceCount: activeDevices.length,
+                blockReason: data.blockReason || ''
+            });
         });
         
         // Sort in memory to avoid requiring a custom composite index in Firestore
@@ -211,12 +219,22 @@ app.post('/api/auth/otp', async (req, res) => {
 // PUT toggle block status
 app.put('/api/candidates/:id/block', async (req, res) => {
     const { id } = req.params;
-    const { isBlocked } = req.body;
+    const { isBlocked, clearDevices, blockReason } = req.body;
     
     try {
-        await db.collection('users').doc(id).update({ isBlocked: isBlocked ? 1 : 0 });
-        
+        const updateData = { isBlocked: isBlocked ? 1 : 0 };
         if (!isBlocked) {
+            updateData.blockReason = '';
+            if (clearDevices !== false) {
+                updateData.activeDevices = [];
+            }
+        } else if (blockReason) {
+            updateData.blockReason = blockReason;
+        }
+
+        await db.collection('users').doc(id).update(updateData);
+        
+        if (isBlocked) {
             // Archive forms
             const snapshot = await db.collection('forms').where('userId', '==', id).get();
             const batch = db.batch();
@@ -225,7 +243,208 @@ app.put('/api/candidates/:id/block', async (req, res) => {
             });
             await batch.commit();
         }
-        res.json({ success: true, isBlocked });
+        res.json({ success: true, isBlocked: isBlocked ? 1 : 0, ...updateData });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST Candidate Device Session Registration & Multi-Device Auto-Block Check
+app.post('/api/candidate/session', async (req, res) => {
+    const { userId, username, email, deviceId, deviceName, ipAddress } = req.body;
+    const identifier = userId || username || email;
+
+    if (!identifier || !deviceId) {
+        return res.status(400).json({ error: 'Missing candidate identifier or deviceId.' });
+    }
+
+    try {
+        let userDocRef;
+        let userData;
+
+        if (userId) {
+            const doc = await db.collection('users').doc(userId).get();
+            if (doc.exists) {
+                userDocRef = doc.ref;
+                userData = doc.data();
+            }
+        }
+
+        if (!userDocRef) {
+            const snapshot = await db.collection('users')
+                .where('role', '==', 'candidate')
+                .get();
+            const foundDoc = snapshot.docs.find(d => d.id === identifier || d.data().username === identifier || d.data().email === identifier);
+            if (foundDoc) {
+                userDocRef = foundDoc.ref;
+                userData = foundDoc.data();
+            }
+        }
+
+        if (!userDocRef || !userData) {
+            return res.status(404).json({ error: 'Candidate not found.' });
+        }
+
+        // If candidate is already blocked, reject session
+        if (userData.isBlocked === 1) {
+            return res.status(403).json({
+                success: false,
+                isBlocked: 1,
+                blockReason: userData.blockReason || 'Account is blocked.',
+                error: 'Account is blocked.'
+            });
+        }
+
+        const now = new Date().toISOString();
+        let activeDevices = Array.isArray(userData.activeDevices) ? [...userData.activeDevices] : [];
+
+        const existingDeviceIndex = activeDevices.findIndex(d => d.deviceId === deviceId);
+
+        if (existingDeviceIndex >= 0) {
+            // Update timestamp & info for existing device
+            activeDevices[existingDeviceIndex] = {
+                ...activeDevices[existingDeviceIndex],
+                deviceName: deviceName || activeDevices[existingDeviceIndex].deviceName || 'Unknown Device',
+                ipAddress: ipAddress || activeDevices[existingDeviceIndex].ipAddress || '127.0.0.1',
+                lastActive: now
+            };
+        } else {
+            // New device attempting to log in
+            // Check if candidate is already logged in on another device
+            if (activeDevices.length >= 1) {
+                // CANDIDATE LOGGING IN ON 2 OR MORE DEVICES AT THE SAME TIME!
+                // AUTO-BLOCK THE CANDIDATE IMMEDIATELY!
+                const blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';
+                activeDevices.push({
+                    deviceId,
+                    deviceName: deviceName || 'Secondary Device',
+                    ipAddress: ipAddress || '127.0.0.1',
+                    lastActive: now
+                });
+
+                await userDocRef.update({
+                    isBlocked: 1,
+                    blockReason,
+                    activeDevices
+                });
+
+                console.warn(`[MULTI-DEVICE SECURITY ALERT] Candidate ${userData.username} (${userDocRef.id}) auto-blocked for logging in from multiple devices.`);
+
+                return res.status(403).json({
+                    success: false,
+                    isBlocked: 1,
+                    blockReason,
+                    error: 'Account blocked due to simultaneous login from 2 or more devices.'
+                });
+            }
+
+            // Otherwise, first device session
+            activeDevices.push({
+                deviceId,
+                deviceName: deviceName || 'Primary Device',
+                ipAddress: ipAddress || '127.0.0.1',
+                lastActive: now
+            });
+        }
+
+        await userDocRef.update({
+            activeDevices,
+            lastLoginAt: now
+        });
+
+        res.json({
+            success: true,
+            isBlocked: 0,
+            activeDevices,
+            deviceCount: activeDevices.length
+        });
+    } catch (err) {
+        console.error('Error in /api/candidate/session:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET candidate active devices
+app.get('/api/candidates/:id/devices', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const userDoc = await db.collection('users').doc(id).get();
+        if (!userDoc.exists) return res.status(404).json({ error: 'Candidate not found' });
+        
+        const data = userDoc.data();
+        const activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
+        res.json({
+            id: userDoc.id,
+            name: data.name,
+            username: data.username,
+            isBlocked: data.isBlocked || 0,
+            blockReason: data.blockReason || '',
+            activeDevices,
+            deviceCount: activeDevices.length
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST clear candidate active devices
+app.post('/api/candidates/:id/clear-devices', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.collection('users').doc(id).update({
+            activeDevices: [],
+            blockReason: ''
+        });
+        res.json({ success: true, message: 'Active device sessions cleared.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST candidate device logout
+app.post('/api/candidates/:id/logout-device', async (req, res) => {
+    const { id } = req.params;
+    const { deviceId } = req.body;
+
+    try {
+        const userDoc = await db.collection('users').doc(id).get();
+        if (!userDoc.exists) return res.status(404).json({ error: 'Candidate not found' });
+
+        const data = userDoc.data();
+        let activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
+        activeDevices = activeDevices.filter(d => d.deviceId !== deviceId);
+
+        await db.collection('users').doc(id).update({ activeDevices });
+        res.json({ success: true, activeDevices, deviceCount: activeDevices.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST scan and auto-block candidates with >= 2 active devices
+app.post('/api/candidates/check-multi-device', async (req, res) => {
+    try {
+        const snapshot = await db.collection('users').where('role', '==', 'candidate').get();
+        let blockedCount = 0;
+        const batch = db.batch();
+
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            const activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
+            if (activeDevices.length >= 2 && data.isBlocked !== 1) {
+                batch.update(doc.ref, {
+                    isBlocked: 1,
+                    blockReason: 'Auto-blocked: Detected 2 or more devices logged in simultaneously.'
+                });
+                blockedCount++;
+            }
+        });
+
+        if (blockedCount > 0) {
+            await batch.commit();
+        }
+
+        res.json({ success: true, blockedCandidatesCount: blockedCount });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
