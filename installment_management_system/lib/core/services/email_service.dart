@@ -10,14 +10,27 @@ class EmailService {
     final otp = (100000 + random.nextInt(900000)).toString();
 
     try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:5000/api/auth/otp'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': email,
-          'otp': otp,
-        }),
-      );
+      const baseUrl = 'https://wfh-2.onrender.com';
+      http.Response response;
+      try {
+        response = await http.post(
+          Uri.parse('$baseUrl/api/auth/otp'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email,
+            'otp': otp,
+          }),
+        );
+      } catch (_) {
+        response = await http.post(
+          Uri.parse('http://127.0.0.1:5000/api/auth/otp'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email,
+            'otp': otp,
+          }),
+        );
+      }
       
       if (response.statusCode == 200) {
         print('📧 EMAIL SERVICE: OTP for login has been successfully sent to $email');
