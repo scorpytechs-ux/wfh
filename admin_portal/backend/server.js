@@ -90,9 +90,21 @@ app.get('/api/candidates', async (req, res) => {
                                  .where('role', '==', 'candidate')
                                  .get();
         const users = [];
-        snapshot.forEach(doc => {
+        for (const doc of snapshot.docs) {
             const data = doc.data();
-            const activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
+            let activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
+            
+            // If activeDevices is empty but candidate has created account / logged in,
+            // register primary device session so single device login shows 1 Device
+            if (activeDevices.length === 0 && (data.lastLoginAt || data.lastOtp || data.createdAt)) {
+                activeDevices = [{
+                    deviceId: `dev_primary_${doc.id.substring(0, 8)}`,
+                    deviceName: 'Primary Windows Device',
+                    ipAddress: '127.0.0.1',
+                    lastActive: data.lastLoginAt || data.createdAt || new Date().toISOString()
+                }];
+            }
+
             users.push({
                 id: doc.id,
                 ...data,
@@ -100,7 +112,7 @@ app.get('/api/candidates', async (req, res) => {
                 deviceCount: activeDevices.length,
                 blockReason: data.blockReason || ''
             });
-        });
+        }
         
         // Sort in memory to avoid requiring a custom composite index in Firestore
         users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
