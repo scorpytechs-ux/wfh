@@ -61,6 +61,8 @@ class FormRepository {
       int count = 0;
       for (var doc in querySnapshot.docs) {
         final data = doc.data();
+        final status = data['status'] as String? ?? 'pending';
+        if (status == 'archived') continue;
         if (monthStr != null) {
           final date = data['submittedDate'] as String?;
           if (date != null && date.startsWith(monthStr)) {

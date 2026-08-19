@@ -43,7 +43,6 @@ class ProjectStateNotifier extends Notifier<List<FormDataModel>> {
         // User logged out — clear state
         _lastLoadedUserId = null;
         _subscription?.cancel();
-        _allForms = [];
         state = [];
       }
     });
@@ -61,11 +60,6 @@ class ProjectStateNotifier extends Notifier<List<FormDataModel>> {
     // Return empty initially, stream will populate it
     return [];
   }
-
-  int _currentPage = 1;
-  bool _hasMore = true;
-  bool get hasMore => _hasMore;
-  List<FormDataModel> _allForms = [];
 
   void _listenToForms(String userId) {
     _subscription?.cancel();
@@ -152,34 +146,19 @@ class ProjectStateNotifier extends Notifier<List<FormDataModel>> {
         return 0;
       });
 
-      _allForms = parsedForms;
-      _updatePaginatedState();
+      state = parsedForms;
     });
-  }
-
-  void _updatePaginatedState() {
-    final limit = 50;
-    final endIndex = _currentPage * limit;
-    if (endIndex >= _allForms.length) {
-      _hasMore = false;
-      state = List.from(_allForms);
-    } else {
-      _hasMore = true;
-      state = _allForms.sublist(0, endIndex);
-    }
-  }
-
-  Future<void> loadMoreForms() async {
-    if (!_hasMore) return;
-    _currentPage++;
-    _updatePaginatedState();
   }
 
   /// Public method to manually reload forms from Firestore
   Future<void> reloadForms() async {
-    // With stream, reload can just be ignored or we can reset pagination
-    _currentPage = 1;
-    _updatePaginatedState();
+    final user = ref.read(authViewModelProvider).currentUser;
+    if (user != null) {
+      final userId = (user['id'] ?? user['username'] ?? '') as String;
+      if (userId.isNotEmpty) {
+        _listenToForms(userId);
+      }
+    }
   }
 
   Future<void> addForm(FormDataModel data) async {
@@ -212,7 +191,6 @@ class ProjectStateNotifier extends Notifier<List<FormDataModel>> {
   void clearForms() {
     _lastLoadedUserId = null;
     _subscription?.cancel();
-    _allForms = [];
     state = [];
   }
 }

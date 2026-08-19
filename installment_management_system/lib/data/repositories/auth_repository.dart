@@ -126,4 +126,70 @@ class AuthRepository {
       return null;
     });
   }
+
+  // --- DEVICE MANAGEMENT ---
+
+  Future<void> registerDeviceSession({
+    required String userId,
+    required String deviceId,
+    required String deviceName,
+  }) async {
+    try {
+      final docRef = _db.collection('users').doc(userId);
+      final doc = await docRef.get();
+      if (!doc.exists) return;
+      final data = doc.data()!;
+      List<dynamic> activeDevices = (data['activeDevices'] as List<dynamic>?) != null
+          ? List.from(data['activeDevices'])
+          : [];
+
+      final now = DateTime.now().toIso8601String();
+      final existingIndex = activeDevices.indexWhere((d) => d is Map && d['deviceId'] == deviceId);
+
+      if (existingIndex >= 0) {
+        activeDevices[existingIndex] = {
+          ...activeDevices[existingIndex] as Map<String, dynamic>,
+          'deviceName': deviceName,
+          'lastActive': now,
+        };
+      } else {
+        activeDevices.add({
+          'deviceId': deviceId,
+          'deviceName': deviceName,
+          'lastActive': now,
+        });
+      }
+
+      await docRef.update({
+        'activeDevices': activeDevices,
+        'lastLoginAt': now,
+      });
+    } catch (e) {
+      print('Error in registerDeviceSession: $e');
+    }
+  }
+
+  Future<void> removeDeviceSession({
+    required String userId,
+    required String deviceId,
+  }) async {
+    try {
+      final docRef = _db.collection('users').doc(userId);
+      final doc = await docRef.get();
+      if (!doc.exists) return;
+      final data = doc.data()!;
+      List<dynamic> activeDevices = (data['activeDevices'] as List<dynamic>?) != null
+          ? List.from(data['activeDevices'])
+          : [];
+
+      activeDevices.removeWhere((d) => d is Map && d['deviceId'] == deviceId);
+
+      await docRef.update({
+        'activeDevices': activeDevices,
+      });
+    } catch (e) {
+      print('Error in removeDeviceSession: $e');
+    }
+  }
 }
+

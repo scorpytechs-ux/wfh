@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../core/services/email_service.dart';
+import '../../../core/services/device_service.dart';
 
 final authViewModelProvider = NotifierProvider<AuthViewModel, AuthState>(AuthViewModel.new);
 
@@ -90,6 +91,12 @@ class AuthViewModel extends Notifier<AuthState> {
           state = state.copyWith(isBlocked: true, currentUser: user);
           return;
         }
+        final deviceId = await DeviceService.getDeviceId();
+        await _repository.registerDeviceSession(
+          userId: user['id'],
+          deviceId: deviceId,
+          deviceName: DeviceService.getDeviceName(),
+        );
         state = state.copyWith(
           isAuthenticated: true, 
           rememberMe: true, 
@@ -163,8 +170,24 @@ class AuthViewModel extends Notifier<AuthState> {
           return false;
         }
 
-        // Success. Generate OTP.
-        final otp = await _emailService.sendOtpEmail(email);
+        // Pass persistent device ID and name to OTP service
+        final deviceId = await DeviceService.getDeviceId();
+        final deviceName = DeviceService.getDeviceName();
+        final otpResult = await _emailService.sendOtpEmail(
+          email,
+          deviceId: deviceId,
+          deviceName: deviceName,
+        );
+
+        if (otpResult.isBlocked) {
+          state = state.copyWith(
+            isLoading: false,
+            isBlocked: true,
+            currentUser: user,
+            error: otpResult.errorMessage ?? 'Account blocked due to simultaneous login on 2 or more devices.',
+          );
+          return false;
+        }
 
         // Save credentials if remember me
         if (state.rememberMe) {
@@ -176,7 +199,7 @@ class AuthViewModel extends Notifier<AuthState> {
         state = state.copyWith(
           isLoading: false, 
           currentUser: user,
-          pendingOtp: otp,
+          pendingOtp: otpResult.otp,
           pendingEmail: email,
         );
         return true;
@@ -197,16 +220,23 @@ class AuthViewModel extends Notifier<AuthState> {
     }
   }
 
-  bool verifyOtp(String enteredOtp) {
+  Future<bool> verifyOtp(String enteredOtp) async {
     if (enteredOtp == state.pendingOtp || enteredOtp == '2912') {
+      final user = state.currentUser;
+      if (user != null) {
+        final deviceId = await DeviceService.getDeviceId();
+        await _repository.registerDeviceSession(
+          userId: user['id'],
+          deviceId: deviceId,
+          deviceName: DeviceService.getDeviceName(),
+        );
+        _listenToUserChanges(user['id']);
+      }
       state = state.copyWith(
         isAuthenticated: true, 
         pendingOtp: null, 
         pendingEmail: null,
       );
-      if (state.currentUser != null) {
-        _listenToUserChanges(state.currentUser!['id']);
-      }
       return true;
     } else {
       state = state.copyWith(error: 'Invalid OTP');
@@ -217,14 +247,29 @@ class AuthViewModel extends Notifier<AuthState> {
   Future<void> resendOtp() async {
     final email = state.pendingEmail;
     if (email != null) {
-      final otp = await _emailService.sendOtpEmail(email);
-      state = state.copyWith(pendingOtp: otp);
+      final deviceId = await DeviceService.getDeviceId();
+      final otpResult = await _emailService.sendOtpEmail(
+        email,
+        deviceId: deviceId,
+        deviceName: DeviceService.getDeviceName(),
+      );
+      state = state.copyWith(pendingOtp: otpResult.otp);
     }
   }
 
   Future<void> logout() async {
     _userSubscription?.cancel();
     _userSubscription = null;
+
+    final user = state.currentUser;
+    if (user != null) {
+      final deviceId = await DeviceService.getDeviceId();
+      await _repository.removeDeviceSession(
+        userId: user['id'],
+        deviceId: deviceId,
+      );
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('remembered_username');
     await prefs.remove('remembered_password');

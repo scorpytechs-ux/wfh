@@ -61,7 +61,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     });
   }
 
-  void _handleVerify() {
+  void _handleVerify() async {
     final otp = _otpController.text.trim();
     if (otp.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -70,9 +70,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       return;
     }
 
-    final success = ref.read(authViewModelProvider.notifier).verifyOtp(otp);
+    final success = await ref.read(authViewModelProvider.notifier).verifyOtp(otp);
 
-    if (success) {
+    if (success && mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const DashboardScreen()),
       );

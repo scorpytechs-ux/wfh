@@ -93,17 +93,6 @@ app.get('/api/candidates', async (req, res) => {
         for (const doc of snapshot.docs) {
             const data = doc.data();
             let activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
-            
-            // If activeDevices is empty but candidate has created account / logged in,
-            // register primary device session so single device login shows 1 Device
-            if (activeDevices.length === 0 && (data.lastLoginAt || data.lastOtp || data.createdAt)) {
-                activeDevices = [{
-                    deviceId: `dev_primary_${doc.id.substring(0, 8)}`,
-                    deviceName: 'Primary Windows Device',
-                    ipAddress: '127.0.0.1',
-                    lastActive: data.lastLoginAt || data.createdAt || new Date().toISOString()
-                }];
-            }
 
             users.push({
                 id: doc.id,
@@ -197,10 +186,11 @@ db.collection('users').where('role', '==', 'candidate').onSnapshot(snapshot => {
         if (change.type === 'modified' || change.type === 'added') {
             const data = change.doc.data();
             const activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
+            const uniqueDeviceIds = new Set(activeDevices.map(d => d.deviceId).filter(Boolean));
             
-            // If activeDevices >= 2 and candidate is not yet blocked, auto-block candidate in Firestore
-            if (activeDevices.length >= 2 && data.isBlocked !== 1) {
-                console.warn(`[REALTIME SECURITY] Auto-blocking candidate ${data.username} (${change.doc.id}) due to ${activeDevices.length} active devices.`);
+            // If uniqueDeviceIds >= 2 and candidate is not yet blocked, auto-block candidate in Firestore
+            if (uniqueDeviceIds.size >= 2 && data.isBlocked !== 1) {
+                console.warn(`[REALTIME SECURITY] Auto-blocking candidate ${data.username} (${change.doc.id}) due to ${uniqueDeviceIds.size} unique active devices.`);
                 change.doc.ref.update({
                     isBlocked: 1,
                     blockReason: 'Auto-blocked: Simultaneous login detected on 2 or more devices.'
@@ -214,7 +204,7 @@ db.collection('users').where('role', '==', 'candidate').onSnapshot(snapshot => {
 
 // POST send OTP & Multi-Device Login Check
 app.post('/api/auth/otp', async (req, res) => {
-    const { email, otp } = req.body;
+    const { email, otp, deviceId, deviceName } = req.body;
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
     const userAgent = req.headers['user-agent'] || 'Windows App';
     const now = new Date().toISOString();
@@ -238,44 +228,61 @@ app.post('/api/auth/otp', async (req, res) => {
         }
 
         let activeDevices = Array.isArray(userData.activeDevices) ? [...userData.activeDevices] : [];
+        const effectiveDeviceId = deviceId || `dev_default_${userDoc.id.substring(0, 8)}`;
+        const effectiveDeviceName = deviceName || (userAgent.includes('Windows') ? 'Windows Desktop App' : 'Primary Device');
 
-        // Check if user already has an active device session
-        if (activeDevices.length >= 1) {
-            // MULTI-DEVICE LOGIN DETECTED!
-            // Candidate is attempting to log in while an active device session already exists!
-            const blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';
-            activeDevices.push({
-                deviceId: `dev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                deviceName: `Secondary Device (${userAgent.includes('Windows') ? 'Windows App' : 'Device'})`,
+        const existingDeviceIndex = activeDevices.findIndex(d => d.deviceId === effectiveDeviceId);
+
+        if (existingDeviceIndex >= 0) {
+            // Same device logging in again or resending OTP -> update timestamp
+            activeDevices[existingDeviceIndex] = {
+                ...activeDevices[existingDeviceIndex],
+                deviceName: effectiveDeviceName,
                 ipAddress: ip,
                 userAgent: userAgent,
                 lastActive: now
-            });
-
-            await db.collection('users').doc(userDoc.id).update({
-                isBlocked: 1,
-                blockReason,
-                activeDevices,
-                lastOtp: otp
-            });
-
-            console.warn(`[MULTI-DEVICE SECURITY ALERT] Candidate ${userData.username} (${userDoc.id}) AUTO-BLOCKED for logging into multiple devices.`);
-
-            return res.status(403).json({
-                success: false,
-                isBlocked: 1,
-                blockReason,
-                error: "Account blocked due to simultaneous login on 2 or more devices."
-            });
+            };
         } else {
-            // First device session for this candidate
-            activeDevices.push({
-                deviceId: `dev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                deviceName: `Primary Device (${userAgent.includes('Windows') ? 'Windows App' : 'Device'})`,
-                ipAddress: ip,
-                userAgent: userAgent,
-                lastActive: now
-            });
+            // New device ID
+            // Check if there is ALREADY an active device from a DIFFERENT deviceId
+            const otherActiveDevices = activeDevices.filter(d => d.deviceId && d.deviceId !== effectiveDeviceId);
+
+            if (otherActiveDevices.length >= 1) {
+                // MULTI-DEVICE LOGIN DETECTED!
+                const blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';
+                activeDevices.push({
+                    deviceId: effectiveDeviceId,
+                    deviceName: `Secondary Device (${effectiveDeviceName})`,
+                    ipAddress: ip,
+                    userAgent: userAgent,
+                    lastActive: now
+                });
+
+                await db.collection('users').doc(userDoc.id).update({
+                    isBlocked: 1,
+                    blockReason,
+                    activeDevices,
+                    lastOtp: otp
+                });
+
+                console.warn(`[MULTI-DEVICE SECURITY ALERT] Candidate ${userData.username} (${userDoc.id}) AUTO-BLOCKED for logging into multiple devices.`);
+
+                return res.status(403).json({
+                    success: false,
+                    isBlocked: 1,
+                    blockReason,
+                    error: "Account blocked due to simultaneous login on 2 or more devices."
+                });
+            } else {
+                // First active device
+                activeDevices = [{
+                    deviceId: effectiveDeviceId,
+                    deviceName: effectiveDeviceName,
+                    ipAddress: ip,
+                    userAgent: userAgent,
+                    lastActive: now
+                }];
+            }
         }
 
         await db.collection('users').doc(userDoc.id).update({
@@ -284,28 +291,25 @@ app.post('/api/auth/otp', async (req, res) => {
             lastLoginAt: now
         });
 
-        // Send OTP Email if email transporter is available
+        // Send OTP Email asynchronously so response returns without delay
         if (transporter) {
-            try {
-                const mailOptions = {
-                    from: process.env.SMTP_FROM || '"Admin Portal" <admin@example.com>',
-                    to: email,
-                    subject: "Your Login OTP",
-                    html: `
-                        <h2>Login Verification</h2>
-                        <p>Your One-Time Password (OTP) for login is:</p>
-                        <h1 style="letter-spacing: 4px; color: #3B82F6;">${otp}</h1>
-                        <p>If you did not request this, please ignore this email.</p>
-                    `
-                };
-                const info = await transporter.sendMail(mailOptions);
-                console.log("OTP email sent: %s", info.messageId);
-            } catch (mailErr) {
-                console.error("Error sending OTP email:", mailErr.message);
-            }
+            const mailOptions = {
+                from: process.env.SMTP_FROM || '"Admin Portal" <admin@example.com>',
+                to: email,
+                subject: "Your Login OTP",
+                html: `
+                    <h2>Login Verification</h2>
+                    <p>Your One-Time Password (OTP) for login is:</p>
+                    <h1 style="letter-spacing: 4px; color: #3B82F6;">${otp}</h1>
+                    <p>If you did not request this, please ignore this email.</p>
+                `
+            };
+            transporter.sendMail(mailOptions)
+                .then(info => console.log("OTP email sent: %s", info.messageId))
+                .catch(mailErr => console.error("Error sending OTP email:", mailErr.message));
         }
 
-        return res.json({ success: true });
+        return res.json({ success: true, activeDevices });
     } catch (err) {
         console.error("Error in /api/auth/otp:", err.message);
         return res.status(500).json({ error: err.message });
@@ -406,8 +410,9 @@ app.post('/api/candidate/session', async (req, res) => {
             };
         } else {
             // New device attempting to log in
-            // Check if candidate is already logged in on another device
-            if (activeDevices.length >= 1) {
+            // Check if candidate is already logged in on another DIFFERENT device
+            const otherActiveDevices = activeDevices.filter(d => d.deviceId && d.deviceId !== deviceId);
+            if (otherActiveDevices.length >= 1) {
                 // CANDIDATE LOGGING IN ON 2 OR MORE DEVICES AT THE SAME TIME!
                 // AUTO-BLOCK THE CANDIDATE IMMEDIATELY!
                 const blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';

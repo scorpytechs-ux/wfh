@@ -150,10 +150,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     
     final int monthlyTarget = user != null && user['monthlyTarget'] != null ? user['monthlyTarget'] : 0;
     
-    int completedFormsCount = forms.where((form) => form.isComplete).length;
-    if (user != null && user['stats'] is Map && (user['stats'] as Map)['activeCount'] is int) {
-      completedFormsCount = (user['stats'] as Map)['activeCount'] as int;
-    }
+    final int completedFormsCount = forms.where((form) => form.isComplete).length;
 
     return Scaffold(
       backgroundColor: Colors.white,

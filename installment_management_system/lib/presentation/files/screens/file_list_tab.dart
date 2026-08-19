@@ -4,19 +4,28 @@ import '../../../core/theme/app_theme.dart';
 import '../state/project_state_provider.dart';
 import 'edit_form_screen.dart';
 
-class FileListTab extends ConsumerWidget {
+class FileListTab extends ConsumerStatefulWidget {
   const FileListTab({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FileListTab> createState() => _FileListTabState();
+}
+
+class _FileListTabState extends ConsumerState<FileListTab> {
+  int _visibleCount = 50;
+
+  @override
+  Widget build(BuildContext context) {
     final forms = ref.watch(projectStateProvider);
+    final displayedForms = forms.take(_visibleCount).toList();
+    final hasMore = forms.length > _visibleCount;
 
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('List', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          Text('List (${forms.length} total)', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           Expanded(
             child: Card(
@@ -41,7 +50,7 @@ class FileListTab extends ConsumerWidget {
                               DataColumn(label: Text('Profession')),
                               DataColumn(label: Text('Action')),
                             ],
-                            rows: forms.asMap().entries.map((entry) {
+                            rows: displayedForms.asMap().entries.map((entry) {
                               final index = entry.key;
                               final form = entry.value;
                               return DataRow(
@@ -78,15 +87,17 @@ class FileListTab extends ConsumerWidget {
                             }).toList(),
                           ),
                         ),
-                        if (ref.read(projectStateProvider.notifier).hasMore)
+                        if (hasMore)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 16.0),
                             child: Center(
                               child: ElevatedButton(
                                 onPressed: () {
-                                  ref.read(projectStateProvider.notifier).loadMoreForms();
+                                  setState(() {
+                                    _visibleCount += 50;
+                                  });
                                 },
-                                child: const Text('Load More'),
+                                child: Text('Load More (${forms.length - _visibleCount} remaining)'),
                               ),
                             ),
                           ),
