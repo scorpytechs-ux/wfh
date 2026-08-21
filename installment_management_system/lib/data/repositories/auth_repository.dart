@@ -143,27 +143,59 @@ class AuthRepository {
           ? List.from(data['activeDevices'])
           : [];
 
-      final now = DateTime.now().toIso8601String();
-      final existingIndex = activeDevices.indexWhere((d) => d is Map && d['deviceId'] == deviceId);
+      final now = DateTime.now();
+      final nowIso = now.toIso8601String();
+      const maxInactivityMinutes = 30;
 
-      if (existingIndex >= 0) {
-        activeDevices[existingIndex] = {
-          ...activeDevices[existingIndex] as Map<String, dynamic>,
-          'deviceName': deviceName,
-          'lastActive': now,
-        };
-      } else {
+      // Filter out stale sessions and server-generated OTP dummy IDs (e.g. dev_1787328049502_nomw6)
+      final dummyPattern = RegExp(r'^dev_\d{10,}');
+
+      final concurrentOtherDevices = activeDevices.where((d) {
+        if (d is! Map || d['deviceId'] == null || d['deviceId'] == deviceId) {
+          return false;
+        }
+        final otherDeviceId = d['deviceId'].toString();
+        if (dummyPattern.hasMatch(otherDeviceId)) {
+          return false; // Ignore server dummy OTP artifact
+        }
+        final lastActiveStr = d['lastActive'] as String?;
+        if (lastActiveStr == null || lastActiveStr.isEmpty) return false;
+        try {
+          final lastActiveTime = DateTime.parse(lastActiveStr);
+          final diff = now.difference(lastActiveTime).inMinutes.abs();
+          return diff < maxInactivityMinutes;
+        } catch (_) {
+          return false;
+        }
+      }).toList();
+
+      if (concurrentOtherDevices.isNotEmpty) {
+        // Genuine multi-device simultaneous login detected!
+        final blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';
         activeDevices.add({
           'deviceId': deviceId,
-          'deviceName': deviceName,
-          'lastActive': now,
+          'deviceName': 'Secondary Device ($deviceName)',
+          'lastActive': nowIso,
+        });
+        await docRef.update({
+          'isBlocked': 1,
+          'blockReason': blockReason,
+          'activeDevices': activeDevices,
+          'lastLoginAt': nowIso,
+        });
+      } else {
+        // Single device login -> cleanly keep only this active device session
+        await docRef.update({
+          'activeDevices': [
+            {
+              'deviceId': deviceId,
+              'deviceName': deviceName,
+              'lastActive': nowIso,
+            }
+          ],
+          'lastLoginAt': nowIso,
         });
       }
-
-      await docRef.update({
-        'activeDevices': activeDevices,
-        'lastLoginAt': now,
-      });
     } catch (e) {
       print('Error in registerDeviceSession: $e');
     }

@@ -186,11 +186,24 @@ db.collection('users').where('role', '==', 'candidate').onSnapshot(snapshot => {
         if (change.type === 'modified' || change.type === 'added') {
             const data = change.doc.data();
             const activeDevices = Array.isArray(data.activeDevices) ? data.activeDevices : [];
-            const uniqueDeviceIds = new Set(activeDevices.map(d => d.deviceId).filter(Boolean));
+            const now = Date.now();
+            const maxInactivityMs = 30 * 60 * 1000; // 30 minutes
+
+            // Only count unique devices that have been active recently (within 30 minutes)
+            const recentUniqueDevices = new Set(
+                activeDevices
+                    .filter(d => {
+                        if (!d || !d.deviceId) return false;
+                        if (!d.lastActive) return true;
+                        const time = new Date(d.lastActive).getTime();
+                        return !isNaN(time) && (now - time) < maxInactivityMs;
+                    })
+                    .map(d => d.deviceId)
+            );
             
-            // If uniqueDeviceIds >= 2 and candidate is not yet blocked, auto-block candidate in Firestore
-            if (uniqueDeviceIds.size >= 2 && data.isBlocked !== 1) {
-                console.warn(`[REALTIME SECURITY] Auto-blocking candidate ${data.username} (${change.doc.id}) due to ${uniqueDeviceIds.size} unique active devices.`);
+            // If recentUniqueDevices >= 2 and candidate is not yet blocked, auto-block candidate in Firestore
+            if (recentUniqueDevices.size >= 2 && data.isBlocked !== 1) {
+                console.warn(`[REALTIME SECURITY] Auto-blocking candidate ${data.username} (${change.doc.id}) due to ${recentUniqueDevices.size} active devices.`);
                 change.doc.ref.update({
                     isBlocked: 1,
                     blockReason: 'Auto-blocked: Simultaneous login detected on 2 or more devices.'
@@ -227,68 +240,10 @@ app.post('/api/auth/otp', async (req, res) => {
             });
         }
 
-        let activeDevices = Array.isArray(userData.activeDevices) ? [...userData.activeDevices] : [];
-        const effectiveDeviceId = deviceId || `dev_default_${userDoc.id.substring(0, 8)}`;
-        const effectiveDeviceName = deviceName || (userAgent.includes('Windows') ? 'Windows Desktop App' : 'Primary Device');
-
-        const existingDeviceIndex = activeDevices.findIndex(d => d.deviceId === effectiveDeviceId);
-
-        if (existingDeviceIndex >= 0) {
-            // Same device logging in again or resending OTP -> update timestamp
-            activeDevices[existingDeviceIndex] = {
-                ...activeDevices[existingDeviceIndex],
-                deviceName: effectiveDeviceName,
-                ipAddress: ip,
-                userAgent: userAgent,
-                lastActive: now
-            };
-        } else {
-            // New device ID
-            // Check if there is ALREADY an active device from a DIFFERENT deviceId
-            const otherActiveDevices = activeDevices.filter(d => d.deviceId && d.deviceId !== effectiveDeviceId);
-
-            if (otherActiveDevices.length >= 1) {
-                // MULTI-DEVICE LOGIN DETECTED!
-                const blockReason = 'Auto-blocked: Simultaneous login detected on 2 or more devices.';
-                activeDevices.push({
-                    deviceId: effectiveDeviceId,
-                    deviceName: `Secondary Device (${effectiveDeviceName})`,
-                    ipAddress: ip,
-                    userAgent: userAgent,
-                    lastActive: now
-                });
-
-                await db.collection('users').doc(userDoc.id).update({
-                    isBlocked: 1,
-                    blockReason,
-                    activeDevices,
-                    lastOtp: otp
-                });
-
-                console.warn(`[MULTI-DEVICE SECURITY ALERT] Candidate ${userData.username} (${userDoc.id}) AUTO-BLOCKED for logging into multiple devices.`);
-
-                return res.status(403).json({
-                    success: false,
-                    isBlocked: 1,
-                    blockReason,
-                    error: "Account blocked due to simultaneous login on 2 or more devices."
-                });
-            } else {
-                // First active device
-                activeDevices = [{
-                    deviceId: effectiveDeviceId,
-                    deviceName: effectiveDeviceName,
-                    ipAddress: ip,
-                    userAgent: userAgent,
-                    lastActive: now
-                }];
-            }
-        }
-
+        // Update OTP for verification
         await db.collection('users').doc(userDoc.id).update({
             lastOtp: otp,
-            activeDevices,
-            lastLoginAt: now
+            lastOtpRequestedAt: now
         });
 
         // Send OTP Email asynchronously so response returns without delay

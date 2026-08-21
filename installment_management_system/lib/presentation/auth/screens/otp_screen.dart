@@ -62,6 +62,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   void _handleVerify() async {
+    final authState = ref.read(authViewModelProvider);
+    if (authState.isLoading) return;
+
     final otp = _otpController.text.trim();
     if (otp.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -167,7 +170,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _handleVerify,
+                          onPressed: authState.isLoading ? null : _handleVerify,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF3B82F6),
                             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -175,7 +178,13 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: const Text('Verify & Login', style: TextStyle(fontSize: 16)),
+                          child: authState.isLoading
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('Verify & Login', style: TextStyle(fontSize: 16)),
                         ),
                       ),
                       const SizedBox(height: 16),

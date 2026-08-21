@@ -221,25 +221,34 @@ class AuthViewModel extends Notifier<AuthState> {
   }
 
   Future<bool> verifyOtp(String enteredOtp) async {
-    if (enteredOtp == state.pendingOtp || enteredOtp == '2912') {
-      final user = state.currentUser;
-      if (user != null) {
-        final deviceId = await DeviceService.getDeviceId();
-        await _repository.registerDeviceSession(
-          userId: user['id'],
-          deviceId: deviceId,
-          deviceName: DeviceService.getDeviceName(),
+    if (state.isLoading) return false;
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      if (enteredOtp == state.pendingOtp || enteredOtp == '2912') {
+        final user = state.currentUser;
+        if (user != null) {
+          final deviceId = await DeviceService.getDeviceId();
+          await _repository.registerDeviceSession(
+            userId: user['id'],
+            deviceId: deviceId,
+            deviceName: DeviceService.getDeviceName(),
+          );
+          _listenToUserChanges(user['id']);
+        }
+        state = state.copyWith(
+          isLoading: false,
+          isAuthenticated: true, 
+          pendingOtp: null, 
+          pendingEmail: null,
         );
-        _listenToUserChanges(user['id']);
+        return true;
+      } else {
+        state = state.copyWith(isLoading: false, error: 'Invalid OTP');
+        return false;
       }
-      state = state.copyWith(
-        isAuthenticated: true, 
-        pendingOtp: null, 
-        pendingEmail: null,
-      );
-      return true;
-    } else {
-      state = state.copyWith(error: 'Invalid OTP');
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: 'Verification failed: $e');
       return false;
     }
   }

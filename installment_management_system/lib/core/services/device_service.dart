@@ -10,10 +10,14 @@ class DeviceService {
     try {
       final prefs = await SharedPreferences.getInstance();
       String? deviceId = prefs.getString(_deviceIdKey);
-      if (deviceId == null || deviceId.isEmpty) {
-        deviceId = 'dev_win_${_uuid.v4().substring(0, 12)}';
-        await prefs.setString(_deviceIdKey, deviceId);
+      if (deviceId != null && deviceId.isNotEmpty) {
+        return deviceId;
       }
+      final hostname = Platform.localHostname.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      final username = (Platform.environment['USERNAME'] ?? Platform.environment['USER'] ?? 'user')
+          .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      deviceId = 'dev_win_${hostname}_$username';
+      await prefs.setString(_deviceIdKey, deviceId);
       return deviceId;
     } catch (e) {
       return 'dev_win_default';

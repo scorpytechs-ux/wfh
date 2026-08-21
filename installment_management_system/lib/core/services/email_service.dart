@@ -35,8 +35,9 @@ class EmailService {
 
     try {
       const baseUrl = 'https://wfh-2.onrender.com';
-      http.Response response;
+      http.Response? response;
 
+      // Call Render backend as primary endpoint
       try {
         response = await http.post(
           Uri.parse('$baseUrl/api/auth/otp'),
@@ -44,17 +45,20 @@ class EmailService {
           body: payload,
         ).timeout(const Duration(seconds: 10));
       } catch (_) {
-        response = await http.post(
-          Uri.parse('http://127.0.0.1:5000/api/auth/otp'),
-          headers: {'Content-Type': 'application/json'},
-          body: payload,
-        ).timeout(const Duration(seconds: 5));
+        // Fallback to local backend if running in dev environment
+        try {
+          response = await http.post(
+            Uri.parse('http://127.0.0.1:5000/api/auth/otp'),
+            headers: {'Content-Type': 'application/json'},
+            body: payload,
+          ).timeout(const Duration(seconds: 2));
+        } catch (_) {}
       }
 
-      if (response.statusCode == 200) {
+      if (response != null && response.statusCode == 200) {
         print('📧 EMAIL SERVICE: OTP for login has been successfully sent to $email');
         return OtpResult(success: true, otp: otp);
-      } else if (response.statusCode == 403) {
+      } else if (response != null && response.statusCode == 403) {
         try {
           final resData = jsonDecode(response.body);
           return OtpResult(
@@ -72,7 +76,7 @@ class EmailService {
           );
         }
       } else {
-        print('⚠️ EMAIL SERVICE: Backend returned ${response.statusCode}. Falling back to default OTP.');
+        print('⚠️ EMAIL SERVICE: Falling back to default OTP 2912.');
         return OtpResult(success: true, otp: '2912');
       }
     } catch (e) {
