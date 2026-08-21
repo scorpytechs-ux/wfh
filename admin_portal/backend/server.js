@@ -264,7 +264,7 @@ app.post('/api/auth/otp', async (req, res) => {
                 .catch(mailErr => console.error("Error sending OTP email:", mailErr.message));
         }
 
-        return res.json({ success: true, activeDevices });
+        return res.json({ success: true });
     } catch (err) {
         console.error("Error in /api/auth/otp:", err.message);
         return res.status(500).json({ error: err.message });
@@ -618,70 +618,126 @@ app.get('/api/candidates/:id/forms', async (req, res) => {
     }
 });
 
+// Calculate accurate installment based on standard 10.33 formula
+function calculateAccurateInstallment(contractValStr, issueDateStr, renewalDateStr) {
+    if (!contractValStr) return null;
+    const cv = parseFloat(String(contractValStr).replace(/[^0-9.]/g, ''));
+    if (isNaN(cv) || cv <= 0) return null;
+
+    let issueYear = parseInt((String(issueDateStr).match(/\b(19\d\d|20\d\d)\b/) || [])[0]);
+    let renewalYear = parseInt((String(renewalDateStr).match(/\b(19\d\d|20\d\d)\b/) || [])[0]);
+    
+    let months = 0;
+    if (issueYear && renewalYear && renewalYear > issueYear) {
+        months = (renewalYear - issueYear) * 12;
+    } else {
+        const d1 = new Date(issueDateStr);
+        const d2 = new Date(renewalDateStr);
+        if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
+            months = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+        }
+    }
+    if (!months || months <= 0) months = 36; // Default to 36 months if difference cannot be determined
+
+    // Step 1: Contract value ÷ contract months = first value (3 decimal places)
+    const firstVal = Math.floor((cv / months) * 1000) / 1000;
+    // Step 2: First value x 10.33 (standard value) = second value (3 decimal places)
+    const secondVal = Math.floor((firstVal * 10.33) * 1000) / 1000;
+    // Step 3: Second value / 100 = third value (3 decimal places)
+    const thirdVal = Math.floor((secondVal / 100) * 1000) / 1000;
+    // Final: Third value + first value = installment
+    const finalVal = (thirdVal + firstVal).toFixed(3);
+    return finalVal;
+}
+
+// Field correctness check supporting numeric tolerances & case-insensitive matching
+function isFieldCorrect(key, formVal, truthVal) {
+    if (formVal == null) formVal = '';
+    if (truthVal == null) truthVal = '';
+    const fv = String(formVal).trim();
+    const tv = String(truthVal).trim();
+
+    if (key === 'installment') {
+        if (fv === tv) return true;
+        const numFv = parseFloat(fv.replace(/[^0-9.]/g, ''));
+        const numTv = parseFloat(tv.replace(/[^0-9.]/g, ''));
+        if (!isNaN(numFv) && !isNaN(numTv)) {
+            return Math.abs(numFv - numTv) < 0.005;
+        }
+    }
+
+    return fv.toLowerCase() === tv.toLowerCase();
+}
+
 // Helper function to extract or build dynamic ground truth for a given form doc
 function getFormGroundTruth(form) {
+    const gt = {};
+    const keyMap = {
+        'serialNo': 'serialNo', 'Serial No': 'serialNo',
+        'title': 'title', 'Title': 'title',
+        'firstName': 'firstName', 'First Name': 'firstName',
+        'lastName': 'lastName', 'Last Name': 'lastName',
+        'initial': 'initial', 'Initial': 'initial',
+        'email': 'email', 'Email': 'email',
+        'fatherName': 'fatherName', 'Father Name': 'fatherName',
+        'dob': 'dob', 'DOB': 'dob',
+        'gender': 'gender', 'Gender': 'gender',
+        'profession': 'profession', 'Profession': 'profession',
+        'mailingStreet': 'mailingStreet', 'Mailing Street': 'mailingStreet',
+        'mailingCity': 'mailingCity', 'Mailing City': 'mailingCity',
+        'mailingPostal': 'mailingPostal', 'Mailing Postal': 'mailingPostal',
+        'mailingCountry': 'mailingCountry', 'Mailing Country': 'mailingCountry',
+        'serviceProvider': 'serviceProvider', 'Service Provider': 'serviceProvider',
+        'fileNo': 'fileNo', 'File No': 'fileNo',
+        'referenceNo': 'referenceNo', 'Reference No': 'referenceNo',
+        'simNo': 'simNo', 'Sim No': 'simNo',
+        'typeOfNetwork': 'typeOfNetwork', 'Type Of Network': 'typeOfNetwork',
+        'cellModelNo': 'cellModelNo', 'Cell Model No': 'cellModelNo',
+        'imsi1': 'imsi1', 'IMSI 1': 'imsi1',
+        'imsi2': 'imsi2', 'IMSI 2': 'imsi2',
+        'typeOfPlan': 'typeOfPlan', 'Type Of Plan': 'typeOfPlan',
+        'creditCardType': 'creditCardType', 'Credit Card Type': 'creditCardType',
+        'contractValue': 'contractValue', 'Contract Value': 'contractValue',
+        'dateOfIssue': 'dateOfIssue', 'Date Of Issue': 'dateOfIssue',
+        'dateOfRenewal': 'dateOfRenewal', 'Date Of Renewal': 'dateOfRenewal',
+        'installment': 'installment', 'Installment': 'installment',
+        'amountInWords': 'amountInWords', 'Amount In Words': 'amountInWords',
+        'remarks': 'remarks', 'Remarks': 'remarks',
+    };
+
     if (form.groundTruth && typeof form.groundTruth === 'object' && Object.keys(form.groundTruth).length > 0) {
-        const gt = {};
-        const keyMap = {
-            'serialNo': 'serialNo', 'Serial No': 'serialNo',
-            'title': 'title', 'Title': 'title',
-            'firstName': 'firstName', 'First Name': 'firstName',
-            'lastName': 'lastName', 'Last Name': 'lastName',
-            'initial': 'initial', 'Initial': 'initial',
-            'email': 'email', 'Email': 'email',
-            'fatherName': 'fatherName', 'Father Name': 'fatherName',
-            'dob': 'dob', 'DOB': 'dob',
-            'gender': 'gender', 'Gender': 'gender',
-            'profession': 'profession', 'Profession': 'profession',
-            'mailingStreet': 'mailingStreet', 'Mailing Street': 'mailingStreet',
-            'mailingCity': 'mailingCity', 'Mailing City': 'mailingCity',
-            'mailingPostal': 'mailingPostal', 'Mailing Postal': 'mailingPostal',
-            'mailingCountry': 'mailingCountry', 'Mailing Country': 'mailingCountry',
-            'serviceProvider': 'serviceProvider', 'Service Provider': 'serviceProvider',
-            'fileNo': 'fileNo', 'File No': 'fileNo',
-            'referenceNo': 'referenceNo', 'Reference No': 'referenceNo',
-            'simNo': 'simNo', 'Sim No': 'simNo',
-            'typeOfNetwork': 'typeOfNetwork', 'Type Of Network': 'typeOfNetwork',
-            'cellModelNo': 'cellModelNo', 'Cell Model No': 'cellModelNo',
-            'imsi1': 'imsi1', 'IMSI 1': 'imsi1',
-            'imsi2': 'imsi2', 'IMSI 2': 'imsi2',
-            'typeOfPlan': 'typeOfPlan', 'Type Of Plan': 'typeOfPlan',
-            'creditCardType': 'creditCardType', 'Credit Card Type': 'creditCardType',
-            'contractValue': 'contractValue', 'Contract Value': 'contractValue',
-            'dateOfIssue': 'dateOfIssue', 'Date Of Issue': 'dateOfIssue',
-            'dateOfRenewal': 'dateOfRenewal', 'Date Of Renewal': 'dateOfRenewal',
-            'installment': 'installment', 'Installment': 'installment',
-            'amountInWords': 'amountInWords', 'Amount In Words': 'amountInWords',
-            'remarks': 'remarks', 'Remarks': 'remarks',
-        };
         for (const [k, v] of Object.entries(form.groundTruth)) {
             const normalizedKey = keyMap[k] || k;
             gt[normalizedKey] = String(v != null ? v : '');
         }
-        if (Object.keys(gt).length > 0) return gt;
-    }
-
-    if (form.originalData && typeof form.originalData === 'object' && Object.keys(form.originalData).length > 0) {
-        const gt = {};
+    } else if (form.originalData && typeof form.originalData === 'object' && Object.keys(form.originalData).length > 0) {
         for (const [k, v] of Object.entries(form.originalData)) {
-            gt[k] = String(v != null ? v : '');
+            const normalizedKey = keyMap[k] || k;
+            gt[normalizedKey] = String(v != null ? v : '');
         }
-        if (Object.keys(gt).length > 0) return gt;
+    } else {
+        const fields = [
+            'serialNo', 'title', 'firstName', 'lastName', 'initial', 'email',
+            'fatherName', 'dob', 'gender', 'profession', 'mailingStreet', 'mailingCity',
+            'mailingPostal', 'mailingCountry', 'serviceProvider', 'fileNo', 'referenceNo',
+            'simNo', 'typeOfNetwork', 'cellModelNo', 'imsi1', 'imsi2', 'typeOfPlan',
+            'creditCardType', 'contractValue', 'dateOfIssue', 'dateOfRenewal',
+            'installment', 'amountInWords', 'remarks'
+        ];
+        for (const key of fields) {
+            gt[key] = form[key] != null ? String(form[key]) : '';
+        }
     }
 
-    // Dynamic fallback: build ground truth from the form's own current fields
-    const fields = [
-        'serialNo', 'title', 'firstName', 'lastName', 'initial', 'email',
-        'fatherName', 'dob', 'gender', 'profession', 'mailingStreet', 'mailingCity',
-        'mailingPostal', 'mailingCountry', 'serviceProvider', 'fileNo', 'referenceNo',
-        'simNo', 'typeOfNetwork', 'cellModelNo', 'imsi1', 'imsi2', 'typeOfPlan',
-        'creditCardType', 'contractValue', 'dateOfIssue', 'dateOfRenewal',
-        'installment', 'amountInWords', 'remarks'
-    ];
-    const gt = {};
-    for (const key of fields) {
-        gt[key] = form[key] != null ? String(form[key]) : '';
+    // Dynamic accurate installment calculation based on formula
+    const cv = gt.contractValue || form.contractValue || '';
+    const doi = gt.dateOfIssue || form.dateOfIssue || '';
+    const dor = gt.dateOfRenewal || form.dateOfRenewal || '';
+    const accurateInstallment = calculateAccurateInstallment(cv, doi, dor);
+    if (accurateInstallment) {
+        gt.installment = accurateInstallment;
     }
+
     return gt;
 }
 
@@ -700,9 +756,9 @@ app.post('/api/forms/:id/evaluate', async (req, res) => {
         let mistakes = [];
         
         for (const key in groundTruth) {
-            const formVal = (form[key] != null) ? String(form[key]).trim() : '';
-            const truthVal = (groundTruth[key] != null) ? String(groundTruth[key]).trim() : '';
-            if (formVal !== truthVal) {
+            const formVal = form[key];
+            const truthVal = groundTruth[key];
+            if (!isFieldCorrect(key, formVal, truthVal)) {
                 correctFields--;
                 mistakes.push(key);
             }
@@ -997,9 +1053,9 @@ app.post('/api/candidates/:id/bulk-evaluate', async (req, res) => {
             let mistakes = [];
             
             for (const key in currentGroundTruth) {
-                const formVal = (form[key] != null) ? String(form[key]).trim() : '';
-                const truthVal = (currentGroundTruth[key] != null) ? String(currentGroundTruth[key]).trim() : '';
-                if (formVal !== truthVal) {
+                const formVal = form[key];
+                const truthVal = currentGroundTruth[key];
+                if (!isFieldCorrect(key, formVal, truthVal)) {
                     correctFields--;
                     mistakes.push(key);
                 }

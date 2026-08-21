@@ -144,8 +144,33 @@ export default function Review() {
     }
   };
 
+  const calculateInstallment = (contractValStr, issueDateStr, renewalDateStr) => {
+    if (!contractValStr) return null;
+    const cv = parseFloat(String(contractValStr).replace(/[^0-9.]/g, ''));
+    if (isNaN(cv) || cv <= 0) return null;
+
+    let issueYear = parseInt((String(issueDateStr).match(/\b(19\d\d|20\d\d)\b/) || [])[0]);
+    let renewalYear = parseInt((String(renewalDateStr).match(/\b(19\d\d|20\d\d)\b/) || [])[0]);
+    let months = (issueYear && renewalYear && renewalYear > issueYear) ? (renewalYear - issueYear) * 12 : 36;
+    if (!months || months <= 0) months = 36;
+
+    const firstVal = Math.floor((cv / months) * 1000) / 1000;
+    const secondVal = Math.floor((firstVal * 10.33) * 1000) / 1000;
+    const thirdVal = Math.floor((secondVal / 100) * 1000) / 1000;
+    return (thirdVal + firstVal).toFixed(3);
+  };
+
   const renderField = (form, key, label, value) => {
     const isMistake = form.mistakes?.includes(key);
+    let expectedHint = null;
+
+    if (key === 'installment') {
+      const calculated = form.expectedInstallment || calculateInstallment(form.contractValue, form.dateOfIssue, form.dateOfRenewal);
+      if (calculated) {
+        expectedHint = ` (Correct Formula: ${calculated})`;
+      }
+    }
+
     return (
       <div style={{ marginBottom: '8px' }}>
         <span style={{ color: 'var(--text-muted)' }}>{label}:</span>{' '}
@@ -158,6 +183,11 @@ export default function Review() {
         }}>
           {value || 'N/A'}
         </span>
+        {expectedHint && (
+          <span style={{ fontSize: '11px', color: isMistake ? '#f87171' : '#38bdf8', marginLeft: '6px', fontWeight: '500' }}>
+            {expectedHint}
+          </span>
+        )}
       </div>
     );
   };
