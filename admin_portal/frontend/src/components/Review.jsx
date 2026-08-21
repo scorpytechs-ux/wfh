@@ -144,6 +144,22 @@ export default function Review() {
     }
   };
 
+  const getGroundTruthValue = (form, key) => {
+    if (form.originalData && form.originalData[key] != null) return form.originalData[key];
+    if (form.groundTruth) {
+      const keyMap = {
+        'contractValue': 'Contract Value',
+        'dateOfIssue': 'Date Of Issue',
+        'dateOfRenewal': 'Date Of Renewal',
+        'installment': 'Installment'
+      };
+      const gtKey = keyMap[key] || key;
+      if (form.groundTruth[gtKey] != null) return form.groundTruth[gtKey];
+      if (form.groundTruth[key] != null) return form.groundTruth[key];
+    }
+    return form[key];
+  };
+
   const calculateInstallment = (contractValStr, issueDateStr, renewalDateStr) => {
     if (!contractValStr) return null;
     const cv = parseFloat(String(contractValStr).replace(/[^0-9.]/g, ''));
@@ -165,7 +181,10 @@ export default function Review() {
     let expectedHint = null;
 
     if (key === 'installment') {
-      const calculated = form.expectedInstallment || calculateInstallment(form.contractValue, form.dateOfIssue, form.dateOfRenewal);
+      const origCv = getGroundTruthValue(form, 'contractValue');
+      const origDoi = getGroundTruthValue(form, 'dateOfIssue');
+      const origDor = getGroundTruthValue(form, 'dateOfRenewal');
+      const calculated = form.expectedInstallment || calculateInstallment(origCv, origDoi, origDor);
       if (calculated) {
         expectedHint = ` (Correct Formula: ${calculated})`;
       }

@@ -573,9 +573,11 @@ app.get('/api/candidates/:id/forms', async (req, res) => {
         const forms = [];
         snapshot.forEach(doc => {
             const data = doc.data();
+            const gt = getFormGroundTruth(data);
             forms.push({
                 id: doc.id,
                 ...data,
+                expectedInstallment: gt.installment,
                 mistakes: typeof data.mistakes === 'string' ? JSON.parse(data.mistakes) : (data.mistakes || [])
             });
         });
